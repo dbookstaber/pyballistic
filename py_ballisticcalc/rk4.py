@@ -6,18 +6,23 @@ import warnings
 from dataclasses import dataclass, field
 from typing_extensions import Union, List
 
-from py_ballisticcalc import Calculator, Shot, TrajectoryData, TrajFlag, Ammo
-from py_ballisticcalc.exceptions import ZeroFindingError, RangeError
+from py_ballisticcalc.interface import Calculator
+from py_ballisticcalc.vector import Vector
+from py_ballisticcalc.trajectory_calc import (TrajectoryCalc, Config,
+                                              create_trajectory_row,
+                                              _TrajectoryDataFilter, _WindSock)
+from py_ballisticcalc.exceptions import RangeError
 from py_ballisticcalc.conditions import Shot
-from py_ballisticcalc.trajectory_data import HitResult
+from py_ballisticcalc.munition import Ammo
+from py_ballisticcalc.trajectory_data import TrajectoryData, HitResult, TrajFlag
 from py_ballisticcalc.unit import Angular, Distance, PreferredUnits
-from py_ballisticcalc.interface_config import InterfaceConfigDict, create_interface_config
-from py_ballisticcalc.trajectory_calc import *
+from py_ballisticcalc.interface_config import create_interface_config
 
 __all__ = (
     'RK4Calculator',
     'RK4TrajectoryCalc',
 )
+
 
 class RK4TrajectoryCalc(TrajectoryCalc):
     """Computes trajectory using Runge-Kutta 4th order method"""
@@ -39,10 +44,10 @@ class RK4TrajectoryCalc(TrajectoryCalc):
         """
         print("Running RK4 Calculator...")
 
-        # TODO: Get this to reference parent config?
-        _cMinimumVelocity = 0 #self.__config.cMinimumVelocity
-        _cMaximumDrop = cMaximumDrop #self.__config.cMaximumDrop
-        _cMinimumAltitude = cMinimumAltitude #self.__config.cMinimumAltitude
+        # TODO: temporary use direct access via classname, it's not recommended but I'll fix it
+        _cMinimumVelocity = self._TrajectoryCalc__config.cMinimumVelocity
+        _cMaximumDrop = self._TrajectoryCalc__config.cMaximumDrop
+        _cMinimumAltitude = self._TrajectoryCalc__config.cMinimumAltitude
 
         ranges: List[TrajectoryData] = []  # Record of TrajectoryData points to return
         time: float = .0
@@ -107,10 +112,12 @@ class RK4TrajectoryCalc(TrajectoryCalc):
             relative_velocity = velocity_vector - wind_vector
             # Drag is a function of air density and velocity relative to the air in mach units
             km = density_factor * self.drag_by_mach(relative_velocity.magnitude() / mach)
+
             def f(v):  # dv/dt
-                nonlocal km
+                # nonlocal km  # TODO: should not use nonlocal cause we don't have closure
                 # Bullet velocity changes due to both drag and gravity
                 return self.gravity_vector - km * v * v.magnitude()
+
             v1 = delta_time * f(relative_velocity)
             v2 = delta_time * f(relative_velocity + 0.5 * v1)
             v3 = delta_time * f(relative_velocity + 0.5 * v2)
@@ -119,8 +126,8 @@ class RK4TrajectoryCalc(TrajectoryCalc):
             p2 = delta_time * (velocity_vector + 0.5 * p1)
             p3 = delta_time * (velocity_vector + 0.5 * p2)
             p4 = delta_time * (velocity_vector + p3)
-            velocity_vector += (v1 + 2*v2 + 2*v3 + v4) * (1/6.0)
-            range_vector += (p1 + 2*p2 + 2*p3 + p4) * (1/6.0)
+            velocity_vector += (v1 + 2 * v2 + 2 * v3 + v4) * (1 / 6.0)
+            range_vector += (p1 + 2 * p2 + 2 * p3 + p4) * (1 / 6.0)
             time += delta_time
             velocity = velocity_vector.magnitude()  # Velocity relative to ground
             drag = km * relative_velocity.magnitude()
@@ -171,7 +178,7 @@ class RK4Calculator(Calculator):
         return Angular.Radian(
             (total_elevation >> Angular.Radian) - (shot.look_angle >> Angular.Radian)
         )
-    
+
     def fire(self, shot: Shot, trajectory_range: Union[float, Distance],
              trajectory_step: Union[float, Distance] = 0,
              extra_data: bool = False,
@@ -191,4 +198,3 @@ class RK4Calculator(Calculator):
         self._calc = RK4TrajectoryCalc(shot.ammo, create_interface_config(self._config))
         data = self._calc.trajectory(shot, trajectory_range, step, extra_data, time_step)
         return HitResult(shot, data, extra_data)
-
