@@ -15,6 +15,7 @@ from py_ballisticcalc.unit import Distance, Angular, Velocity, Weight, Energy, P
 from py_ballisticcalc.vector import Vector
 from py_ballisticcalc.logger import logger
 
+# TODO: Look at all the extra stuff we have to expose for rk4.py
 __all__ = (
     'TrajectoryCalc',
     'Vector',
@@ -30,6 +31,9 @@ __all__ = (
     'cGravityConstant',
     'cMinimumAltitude',
     'Config',
+    'create_trajectory_row',
+    '_WindSock',
+    '_TrajectoryDataFilter',
 )
 
 cZeroFindingAccuracy: Final[float] = 0.000005
