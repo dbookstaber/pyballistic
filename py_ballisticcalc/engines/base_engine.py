@@ -717,6 +717,9 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         assert slant_range_ft is not None
 
         # 1. Find the maximum possible range to establish a search bracket.
+        # TODO: In many scenarios this is unnecessarily expensive: We can confirm that the target is within
+        #      range without precisely determining the max range at the look angle, and Ridder's method on
+        #      the full interval 0-90° would be faster.
         max_range, angle_at_max = self._find_max_range(props)
         max_range_ft = max_range >> Distance.Foot
         angle_at_max_rad = angle_at_max >> Angular.Radian
