@@ -6,6 +6,7 @@ from typing_extensions import NamedTuple, Optional, Union, Tuple, Final
 
 from py_ballisticcalc.conditions import Shot
 from py_ballisticcalc.unit import Angular, Distance, Weight, Velocity, Energy, GenericDimension, Unit, PreferredUnits
+from py_ballisticcalc.exceptions import RangeError
 
 if typing.TYPE_CHECKING:
     from pandas import DataFrame
@@ -224,11 +225,12 @@ class HitResult:
     Attributes:
         shot (Shot): The shot conditions.
         trajectory (list[TrajectoryData]): The trajectory data.
-        extra (bool): Whether special points (TrajFlag.ALL) were requested.
+        extra (bool): Whether special points (TrajFlag > 0) were requested.
     """
     shot: Shot
     trajectory: list[TrajectoryData] = field(repr=False)
     extra: bool = False
+    error: Optional[RangeError] = None
 
     def __len__(self) -> int:
         return len(self.trajectory)

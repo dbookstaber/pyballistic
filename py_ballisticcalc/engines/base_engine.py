@@ -424,30 +424,6 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         """Get step size for integration."""
         return self._config.cStepMultiplier
 
-    def trajectory(self, shot_info: Shot, max_range: Distance, dist_step: Distance,
-                   extra_data: bool = False, time_step: float = 0.0) -> List[TrajectoryData]:
-        """
-        Calculates the trajectory of a projectile.
-
-        Args:
-            shot_info (Shot): Information about the shot.
-            max_range (Distance): The maximum range of the trajectory.
-            dist_step (Distance): The distance step for calculations.
-            extra_data (bool, optional): Flag to include extra data. Defaults to False.
-            time_step (float, optional): The time step for calculations. Defaults to 0.0.
-
-        Returns:
-            List[TrajectoryData]: A list of trajectory data points.
-        """
-        filter_flags = TrajFlag.RANGE
-
-        if extra_data:
-            filter_flags = TrajFlag.ALL
-
-        props = self._init_trajectory(shot_info)
-        return self._integrate(props, max_range >> Distance.Foot,
-                               dist_step >> Distance.Foot, filter_flags, time_step)
-
     def _init_trajectory(self, shot_info: Shot) -> _ShotProps:
         """
         Converts Shot properties into floats dimensioned in internal units.
@@ -926,52 +902,55 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(props.barrel_elevation_rad))
         return _new_rad(props.barrel_elevation_rad)
 
-    def integrate(self, shot_info: Shot, max_range: Union[Distance, float] = 9e9, dist_step: Union[Distance, float] = 0.,
-                  filter_flags: Union[TrajFlag, int] = TrajFlag.RANGE, time_step: float = 0.0) -> List[TrajectoryData]:
+    def integrate(self, shot_info: Shot,
+                        max_range: Distance,
+                        dist_step: Optional[Distance] = None,
+                        time_step: float = 0.0,
+                        filter_flags: Union[TrajFlag, int] = TrajFlag.NONE,
+                        dense_output: bool = False,
+                        **kwargs) -> HitResult:
         """
         Integrates the trajectory for the given shot.
 
         Args:
             shot_info (Shot): The shot information.
-            max_range (Union[Distance, float], optional): Maximum range of the trajectory.
-            dist_step (Union[Distance, float], optional): Distance step for recording RANGE TrajectoryData rows.
+            max_range (Distance): Maximum range of the trajectory (if float then treated as feet).
+            dist_step (Optional[Distance]): Distance step for recording RANGE TrajectoryData rows.
             filter_flags (Union[TrajFlag, int], optional): Flags to filter trajectory data. Defaults to TrajFlag.RANGE.
             time_step (float, optional): Time step for recording trajectory data. Defaults to 0.0.
+            dense_output (bool, optional): If True, HitResult will save BaseTrajData for interpolating TrajectoryData.
 
         Returns:
-            List[TrajectoryData]: A list of trajectory data points.
+            HitResult: Object for describing the trajectory.
         """
         props = self._init_trajectory(shot_info)
-        if isinstance(max_range, Distance):
-            max_range = max_range >> Distance.Foot
-        if isinstance(dist_step, Distance):
-            dist_step = dist_step >> Distance.Foot
-        return self._integrate(props, max_range, dist_step, filter_flags, time_step)
+        range_limit_ft = max_range >> Distance.Foot
+        if dist_step is None:
+            range_step_ft = range_limit_ft
+        else:
+            range_step_ft = dist_step >> Distance.Foot
+        return self._integrate(props, range_limit_ft, range_step_ft, time_step, filter_flags, dense_output)
 
     @abstractmethod
-    def _integrate(self, props: _ShotProps, maximum_range: float, record_step: float,
-                   filter_flags: Union[TrajFlag, int], time_step: float = 0.0) -> List[TrajectoryData]:
+    def _integrate(self, props: _ShotProps, range_limit_ft: float, range_step_ft: float,
+                   time_step: float = 0.0, filter_flags: Union[TrajFlag, int] = TrajFlag.NONE,
+                   dense_output: bool = False, **kwargs) -> HitResult:
         """
-        Calculate trajectory for specified shot.  Requirements:
-        - If filter_flags==TrajFlag.NONE, then must return a list of exactly one TrajectoryData where:
-            - .distance = maximum_range if reached, else last calculated point.
-        - If filter_flags & TrajFlag.RANGE, then return must include a RANGE entry for each record_step reached,
-            starting at zero (initial conditions).  If time_step > 0, must also include RANGE entries per that spec.
-        - For each other filter_flag: Return list must include a row with the flag if it exists in the trajectory.
-            Do not duplicate rows: If two flags occur at the exact same time, mark the row with both flags.
+        Creates HitResult for the specified shot.
 
         Args:
             props (Shot): Information specific to the shot.
-            maximum_range (float): Feet down-range to stop calculation
-            record_step (float): Frequency (in feet down-range) to record TrajectoryData
+            range_limit_ft (float): Feet down-range to stop calculation.
+            range_step_ft (float): Frequency (in feet down-range) to record TrajectoryData.
             filter_flags (Union[TrajFlag, int]): Bitfield for trajectory points of interest to record.
             time_step (float, optional): If > 0 then record TrajectoryData after this many seconds elapse
-                since last record, as could happen when trajectory is nearly vertical
-                and there is too little movement down-range to trigger a record based on range.
-                Defaults to 0.0
+                since last record, as could happen when trajectory is nearly vertical and there is too little
+                movement down-range to trigger a record based on range.  (Defaults to 0.0)
+            dense_output (bool, optional): If True, HitResult will save BaseTrajData at each integration step,
+                for interpolating TrajectoryData.
 
         Returns:
-            List[TrajectoryData]: list of TrajectoryData
+            HitResult: Object describing the trajectory.
         """
         raise NotImplementedError
 

@@ -33,6 +33,7 @@ from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
 import warnings
 
 from py_ballisticcalc.exceptions import RangeError
+from py_ballisticcalc.trajectory_data import HitResult
 
 
 __all__ = (
@@ -45,8 +46,10 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
     cdef double get_calc_step(CythonizedEulerIntegrationEngine self):
         return 0.5 * CythonizedBaseIntegrationEngine.get_calc_step(self)  # like super().get_calc_step()
 
-    cdef list[object] _integrate(CythonizedEulerIntegrationEngine self,
-                                 double maximum_range, double record_step, int filter_flags, double time_step = 0.0):
+    cdef object _integrate(CythonizedEulerIntegrationEngine self,
+                                 double range_limit_ft, double range_step_ft,
+                                 double time_step, int filter_flags,
+                                 bint dense_output):
         cdef:
             double velocity, delta_time
             double density_factor = .0
@@ -91,9 +94,9 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         velocity_vector = mulS(&_tv, velocity)
         # endregion
 
-        min_step = fmin(calc_step, record_step)
+        min_step = fmin(calc_step, range_step_ft)
         # With non-zero look_angle, rounding can suggest multiple adjacent zero-crossings
-        data_filter = TrajDataFilter_t_create(filter_flags=filter_flags, range_step=record_step,
+        data_filter = TrajDataFilter_t_create(filter_flags=filter_flags, range_step=range_step_ft,
                                                  initial_position_ptr=&range_vector,
                                                  initial_velocity_ptr=&velocity_vector,
                                                  time_step=time_step)
@@ -104,8 +107,8 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         termination_reason = None
         last_recorded_range = 0.0
 
-        while (range_vector.x <= maximum_range + min_step) or (
-                last_recorded_range <= maximum_range - 1e-6):
+        while (range_vector.x <= range_limit_ft + min_step) or (
+                last_recorded_range <= range_limit_ft - 1e-6):
             self.integration_step_count += 1
 
             # Update wind reading at current point in trajectory
@@ -177,6 +180,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
                     &self._shot_s, density_factor, drag, TrajFlag_t.NONE
                 ))
 
+        error = None
         if termination_reason is not None:
-            raise RangeError(termination_reason, ranges)
-        return ranges
+            error = RangeError(termination_reason, ranges)
+        return (ranges, error)
