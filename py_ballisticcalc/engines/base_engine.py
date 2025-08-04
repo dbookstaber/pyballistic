@@ -35,6 +35,7 @@ __all__ = (
     'CurvePoint',
     '_ShotProps',
     '_ZeroCalcStatus',
+    'with_min_velocity_zero',
 )
 
 cZeroFindingAccuracy: float = 0.000005  # Max allowed slant-error in feet to end zero search
@@ -398,6 +399,20 @@ class ZeroFindingProps(NamedTuple):
     start_height_ft: Optional[float] = None
 
 
+def with_min_velocity_zero(method):
+    def wrapper(self, *args, **kwargs):
+        restore = None
+        if getattr(self._config, "cMinimumVelocity", None) != 0:
+            restore = self._config.cMinimumVelocity
+            self._config.cMinimumVelocity = 0
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            if restore is not None:
+                self._config.cMinimumVelocity = restore
+    return wrapper
+
+
 _BaseEngineConfigDictT = TypeVar("_BaseEngineConfigDictT", bound='BaseEngineConfigDict', covariant=True)
 
 
@@ -474,6 +489,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_max_range(props, angle_bracket_deg)
 
+    @with_min_velocity_zero
     def _find_max_range(self, props: _ShotProps, angle_bracket_deg: Tuple[float, float] = (0, 90)) -> Tuple[
         Distance, Angular]:
         """
@@ -520,12 +536,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             nonlocal t_calls
             t_calls += 1
             logger.debug(f"range_for_angle call #{t_calls} for angle {math.degrees(angle_rad)} degrees")
-            try:
-                t = self._integrate(props, 9e9, 9e9, TrajFlag.NONE)[-1]
-            except RangeError as e:
-                if e.last_distance is None:
-                    raise e
-                t = e.incomplete_trajectory[-1]
+            t = self._integrate(props, 9e9, 9e9, filter_flags=TrajFlag.NONE)[-1]
             cache[angle_rad] = t.distance >> Distance.Foot
             return cache[angle_rad]
 
@@ -578,6 +589,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_apex(props)
 
+    @with_min_velocity_zero
     def _find_apex(self, props: _ShotProps) -> TrajectoryData:
         """
         Internal implementation to find the apex of the trajectory.
@@ -594,21 +606,8 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         """
         if props.barrel_elevation_rad <= 0:
             raise ValueError("Barrel elevation must be greater than 0 to find apex.")
-        # Have to ensure cMinimumVelocity is 0 for this to work.
-        restoreMinVelocity = None
-        if self._config.cMinimumVelocity > 0:
-            restoreMinVelocity = self._config.cMinimumVelocity
-            self._config.cMinimumVelocity = 0.
-        #props.barrel_elevation_rad = props.look_angle_rad
-        try:
-            t = HitResult(props.shot, self._integrate(props, 9e9, 9e9, TrajFlag.APEX), extra=True)
-        except RangeError as e:
-            if e.last_distance is None:
-                raise e
-            t = HitResult(props.shot, e.incomplete_trajectory, extra=True)
-        if restoreMinVelocity is not None:
-            self._config.cMinimumVelocity = restoreMinVelocity
-        apex = t.flag(TrajFlag.APEX)
+        hit = self._integrate(props, 9e9, 9e9, filter_flags=TrajFlag.APEX)
+        apex = hit.flag(TrajFlag.APEX)
         if not apex:
             raise SolverRuntimeError("No apex flagged in trajectory data")
         return apex
@@ -665,6 +664,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_zero_angle(props, distance, lofted)
 
+    @with_min_velocity_zero
     def _find_zero_angle(self, props: _ShotProps, distance: Distance, lofted: bool = False) -> Angular:
         """
         Internal implementation to find the barrel elevation needed to hit sight line at a specific distance,
@@ -709,12 +709,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         def error_at_distance(angle_rad: float) -> float:
             """Target miss (in feet) for given launch angle."""
             props.barrel_elevation_rad = angle_rad
-            try:
-                t = self._integrate(props, target_x_ft, target_x_ft, TrajFlag.NONE)[-1]
-            except RangeError as e:
-                if e.last_distance is None:
-                    raise e
-                t = e.incomplete_trajectory[-1]
+            t = self._integrate(props, target_x_ft, target_x_ft, filter_flags=TrajFlag.NONE)[-1]
             if t.time == 0.0:
                 logger.warning("Integrator returned initial point. Consider removing constraints.")
                 return 9e9
@@ -830,12 +825,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
 
         while iterations_count < _cMaxIterations:
             # Check height of trajectory at the zero distance (using current props.barrel_elevation)
-            try:
-                t = self._integrate(props, target_x_ft, target_x_ft, TrajFlag.NONE)[-1]
-            except RangeError as e:
-                if e.last_distance is None:
-                    raise e
-                t = e.incomplete_trajectory[-1]
+            t = self._integrate(props, target_x_ft, target_x_ft, filter_flags=TrajFlag.NONE)[-1]
             if t.time == 0.0:
                 logger.warning("Integrator returned initial point. Consider removing constraints.")
                 break

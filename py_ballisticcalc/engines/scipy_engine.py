@@ -25,7 +25,7 @@ from py_ballisticcalc.conditions import Wind
 from py_ballisticcalc.engines.base_engine import (
     BaseIntegrationEngine,
     BaseEngineConfigDict,
-    BaseEngineConfig, _ShotProps, _ZeroCalcStatus
+    BaseEngineConfig, _ShotProps, _ZeroCalcStatus, with_min_velocity_zero
 )
 from py_ballisticcalc.exceptions import OutOfRangeError, RangeError, ZeroFindingError
 from py_ballisticcalc.logger import logger
@@ -202,6 +202,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         self.eval_points: List[float] = []  # Points at which diff_eq is called
 
     @override
+    @with_min_velocity_zero
     def _find_max_range(self, props: _ShotProps, angle_bracket_deg: Tuple[float, float] = (0.0, 90.0)) -> Tuple[
         Distance, Angular]:
         """
@@ -236,16 +237,11 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             if abs(props.look_angle_rad - math.radians(90)) < self.APEX_IS_MAX_RANGE_RADIANS:
                 return self._find_apex(props).slant_distance >> Distance.Foot
             props.barrel_elevation_rad = angle_rad
-            try:  # TODO: We really want to stop at ZERO_DOWN; stop_at_zero might not let it register that crossing.
-                t = self._integrate(props, 9e9, 9e9, TrajFlag.ZERO_DOWN, stop_at_zero=True)
-            except RangeError as e:
-                if e.last_distance is None:
-                    raise e
-                t = e.incomplete_trajectory
-            hit = HitResult(props.shot, t, True)
+            hit = self._integrate(props, 9e9, 9e9, filter_flags=TrajFlag.ZERO_DOWN, stop_at_zero=True)
             cross = hit.flag(TrajFlag.ZERO_DOWN)
             if cross is None:
-                cross = t[-1]  # Fallback to the last point if no zero crossing found
+                warnings.warn(f'No ZERO_DOWN found for launch angle {angle_rad} rad.')
+                return -9e9
             # Return value penalizes distance by slant height, which we want to be zero.
             return (cross.slant_distance >> Distance.Foot) - abs(cross.slant_height >> Distance.Foot)
 
@@ -262,6 +258,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         return Distance.Feet(max_range_ft), Angular.Radian(angle_at_max_rad)
 
     @override
+    @with_min_velocity_zero
     def _find_zero_angle(self, props: _ShotProps, distance: Distance, lofted: bool = False) -> Angular:
         """
         Internal method to find the barrel elevation needed to hit sight line at a specific distance,
@@ -311,13 +308,8 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         def error_at_distance(angle_rad: float) -> float:
             """Target miss (in feet) for given launch angle."""
             props.barrel_elevation_rad = angle_rad
-            try:
-                # Integrate to find the projectile's state at the target's horizontal distance.
-                t = self._integrate(props, target_x_ft, target_x_ft, TrajFlag.NONE)[-1]
-            except RangeError as e:
-                if e.last_distance is None:
-                    raise e
-                t = e.incomplete_trajectory[-1]
+            # Integrate to find the projectile's state at the target's horizontal distance.
+            t = self._integrate(props, target_x_ft, target_x_ft, filter_flags=TrajFlag.NONE)[-1]
             if t.time == 0.0:
                 logger.warning("Integrator returned initial point. Consider removing constraints.")
                 return -1e6  # Large negative error to discourage this angle.
