@@ -754,7 +754,7 @@ cdef class CythonizedBaseIntegrationEngine:
 
 cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, const V3dT *velocity_vector_ptr,
                                   double mach, const ShotData_t *shot_data_ptr,
-                                  double density_factor, double drag, int flag):
+                                  double density_ratio, double drag, int flag):
 
     cdef:
         double look_angle = shot_data_ptr.look_angle
@@ -781,7 +781,7 @@ cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, con
         windage_adj=_new_rad(windage_adjustment),
         slant_distance=_new_feet(range_vector_ptr.x * look_angle_cos + range_vector_ptr.y * look_angle_sin),
         angle=_new_rad(trajectory_angle),
-        density_factor=density_factor - 1,
+        density_ratio=density_ratio,
         drag=drag,
         energy=_new_ft_lb(calculateEnergy(shot_data_ptr.weight, velocity)),
         ogw=_new_lb(calculateOgw(shot_data_ptr.weight, velocity)),

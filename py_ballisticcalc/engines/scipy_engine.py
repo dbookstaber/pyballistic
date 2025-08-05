@@ -424,9 +424,9 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             else:
                 relative_velocity = velocity_vector - wind_vector
             relative_speed = relative_velocity.magnitude()
-            density_factor, mach = props.get_density_and_mach_for_altitude(y)
-            km = density_factor * props.drag_by_mach(relative_speed / mach)
-            drag = km * relative_speed
+            density_ratio, mach = props.get_density_and_mach_for_altitude(y)
+            k_m = density_ratio * props.drag_by_mach(relative_speed / mach)
+            drag = k_m * relative_speed  # This is the "drag rate"
 
             # Derivatives
             dxdt = vx
@@ -452,7 +452,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         def event_min_velocity(t: float, s: Any) -> np.floating:  # Stop when velocity < _cMinimumVelocity
             v = np.linalg.norm(s[3:6])
             return v - _cMinimumVelocity
-
+        #TODO: Either don't add this event, or always return 0 if _cMinimumVelocity<=0.
         traj_events: List[SciPyEvent] = [event_max_range, event_max_drop, event_min_velocity]
 
         slant_sine = math.sin(props.look_angle_rad)
@@ -505,7 +505,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                 """Helper function to create a TrajectoryData row."""
                 position = Vector(*state[0:3])
                 velocity = Vector(*state[3:6])
-                density_factor, mach = props.get_density_and_mach_for_altitude(position[1])
+                density_ratio, mach = props.get_density_and_mach_for_altitude(position[1])
                 return self._make_row(props, t, position, velocity, mach, flag)
 
             if sol.t[-1] == 0:

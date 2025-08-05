@@ -62,7 +62,7 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
         time: float = .0
         drag: float = .0
         mach: float = .0
-        density_factor: float = .0
+        density_ratio: float = .0
 
         # region Initialize wind-related variables to first wind reading (if any)
         wind_sock = _WindSock(props.winds)
@@ -79,10 +79,10 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
             math.cos(props.barrel_elevation_rad) * math.sin(props.barrel_azimuth_rad)
         ).mul_by_const(relative_speed)  # type: ignore
         # Acceleration:
-        density_factor, mach = props.get_density_and_mach_for_altitude(range_vector.y)
+        density_ratio, mach = props.get_density_and_mach_for_altitude(range_vector.y)
         relative_velocity = velocity_vector - wind_vector
         relative_speed = relative_velocity.magnitude()
-        drag = density_factor * relative_speed * props.drag_by_mach(relative_speed / mach)
+        drag = density_ratio * relative_speed * props.drag_by_mach(relative_speed / mach)
         acceleration_vector = self.gravity_vector - drag * relative_velocity # type: ignore[operator]
         # endregion
 
@@ -110,7 +110,7 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
                 wind_vector = wind_sock.vector_for_range(range_vector.x)
 
             # Update air density at current point in trajectory
-            density_factor, mach = props.get_density_and_mach_for_altitude(range_vector.y)
+            density_ratio, mach = props.get_density_and_mach_for_altitude(range_vector.y)
 
             # region Check whether to record TrajectoryData row at current point
             if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
@@ -127,7 +127,7 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
             # Time step is normalized by velocity so that we take smaller steps when moving faster
             delta_time = props.calc_step
             # Drag is a function of air density and velocity relative to the air
-            drag = density_factor * relative_speed * props.drag_by_mach(relative_speed / mach)
+            drag = density_ratio * relative_speed * props.drag_by_mach(relative_speed / mach)
 
             # region Verlet integration
             # 1. Update position using acceleration from the current step

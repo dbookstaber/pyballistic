@@ -70,8 +70,8 @@ class TrajectoryData(NamedTuple):
         windage_adj (Angular): Windage adjustment.
         slant_distance (Distance): Distance along sight line that is closest to this point.
         angle (Angular): Angle of velocity vector relative to x-axis.
-        density_factor (float): Ratio of air density here to standard density.
-        drag (float): Current drag coefficient.
+        density_ratio (float): Ratio of air density here to standard density.
+        drag (float): Standard Drag Factor at this point.
         energy (Energy): Energy of bullet at this point.
         ogw (Weight): Optimal game weight, given .energy.
         flag (Union[TrajFlag, int]): Row type.
@@ -88,7 +88,7 @@ class TrajectoryData(NamedTuple):
     windage_adj: Angular
     slant_distance: Distance
     angle: Angular
-    density_factor: float
+    density_ratio: float
     drag: float
     energy: Energy
     ogw: Weight
@@ -142,8 +142,8 @@ class TrajectoryData(NamedTuple):
             _fmt(self.windage_adj, PreferredUnits.adjustment),
             _fmt(self.slant_distance, PreferredUnits.distance),
             _fmt(self.angle, PreferredUnits.angular),
-            f'{self.density_factor:.3e}',
-            f'{self.drag:.3f}',
+            f'{self.density_ratio:.5e}',
+            f'{self.drag:.3e}',
             _fmt(self.energy, PreferredUnits.energy),
             _fmt(self.ogw, PreferredUnits.ogw),
             TrajFlag.name(self.flag)
@@ -166,7 +166,7 @@ class TrajectoryData(NamedTuple):
             self.windage_adj >> PreferredUnits.adjustment,
             self.slant_distance >> PreferredUnits.distance,
             self.angle >> PreferredUnits.angular,
-            self.density_factor,
+            self.density_ratio,
             self.drag,
             self.energy >> PreferredUnits.energy,
             self.ogw >> PreferredUnits.ogw,

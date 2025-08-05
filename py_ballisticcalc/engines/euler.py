@@ -66,7 +66,7 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         time: float = .0
         drag: float = .0
         mach: float = .0
-        density_factor: float = .0
+        density_ratio: float = .0
 
         # region Initialize wind-related variables to first wind reading (if any)
         wind_sock = _WindSock(props.winds)
@@ -107,7 +107,7 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
                 wind_vector = wind_sock.vector_for_range(range_vector.x)
 
             # Update air density at current point in trajectory
-            density_factor, mach = props.get_density_and_mach_for_altitude(range_vector.y)
+            density_ratio, mach = props.get_density_and_mach_for_altitude(range_vector.y)
 
             # region Check whether to record TrajectoryData row at current point
             if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
@@ -124,7 +124,7 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
             # Time step is normalized by velocity so that we take smaller steps when moving faster
             delta_time = self.time_step(props.calc_step, relative_speed)
             # Drag is a function of air density and velocity relative to the air
-            drag = density_factor * relative_speed * props.drag_by_mach(relative_speed / mach)
+            drag = density_ratio * relative_speed * props.drag_by_mach(relative_speed / mach)
             # Bullet velocity changes due to both drag and gravity
             velocity_vector -= (relative_velocity * drag - self.gravity_vector) * delta_time  # type: ignore[operator]
             # Bullet position changes by velocity time_deltas the time step

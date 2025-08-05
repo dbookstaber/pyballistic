@@ -50,7 +50,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                                  bint dense_output):
         cdef:
             double velocity, delta_time
-            double density_factor = .0
+            double density_ratio = .0
             double mach = .0
             list[object] ranges = []
             double time = .0
@@ -120,16 +120,16 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                 wind_vector = WindSock_t_vectorForRange(self._wind_sock, range_vector.x)
 
             # Update air density at current point in trajectory
-            # overwrite density_factor and mach by pointer
+            # overwrite density_ratio and mach by pointer
             Atmosphere_t_updateDensityFactorAndMachForAltitude(&self._shot_s.atmo,
-                self._shot_s.alt0 + range_vector.y, &density_factor, &mach)
+                self._shot_s.alt0 + range_vector.y, &density_ratio, &mach)
 
             # region Check whether to record TrajectoryData row at current point
             data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
             if data is not None:
                 ranges.append(create_trajectory_row(
                     data.time, &data.position, &data.velocity, data.mach,
-                    &self._shot_s, density_factor, drag, data_filter.current_flag
+                    &self._shot_s, density_ratio, drag, data_filter.current_flag
                 ))
                 last_recorded_range = data.position.x
             # endregion
@@ -139,7 +139,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             relative_speed = mag(&relative_velocity)
 
             delta_time = calc_step
-            km = density_factor * ShotData_t_dragByMach(&self._shot_s, relative_speed / mach)
+            km = density_ratio * ShotData_t_dragByMach(&self._shot_s, relative_speed / mach)
             drag = km * relative_speed
 
             # # region RK4 integration
@@ -239,7 +239,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
         if data is not None:
             ranges.append(create_trajectory_row(
                 data.time, &data.position, &data.velocity, data.mach,
-                &self._shot_s, density_factor, drag, data_filter.current_flag
+                &self._shot_s, density_ratio, drag, data_filter.current_flag
             ))
         # Ensure that we have at least two data points in trajectory, or 1 if filter_flags==NONE
         # ... as well as last point if we had an incomplete trajectory
@@ -249,7 +249,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             else:
                 ranges.append(create_trajectory_row(
                     time, &range_vector, &velocity_vector, mach,
-                    &self._shot_s, density_factor, drag, TrajFlag_t.NONE
+                    &self._shot_s, density_ratio, drag, TrajFlag_t.NONE
                 ))
 
         error = None

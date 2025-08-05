@@ -317,13 +317,12 @@ class _ShotProps:
 
     def drag_by_mach(self, mach: float) -> float:
         """
-        Calculates the drag coefficient at a given Mach number.
-
-        The drag force is calculated using the following formula:
-        Drag force = V^2 * Cd * AirDensity * S / 2m
-
+        Calculates a standard drag factor (SDF) for the given Mach number.  Where:
+            Drag force = V^2 * AirDensity * C_d * S / 2m
+                       = V^2 * density_ratio * SDF
         Where:
-            - cStandardDensity of Air = 0.076474 lb/ft^3
+            - density_ratio = LocalAirDensity / StandardDensity = rho / rho_0
+            - StandardDensity of Air = rho_0 = 0.076474 lb/ft^3
             - S is cross-section = d^2 pi/4, where d is bullet diameter in inches
             - m is bullet mass in pounds
             - bc contains m/d^2 in units lb/in^2, which is multiplied by 144 to convert to lb/ft^2
@@ -335,7 +334,7 @@ class _ShotProps:
             mach (float): The Mach number.
 
         Returns:
-            float: The drag coefficient at the given Mach number.
+            float: The standard drag factor at the given Mach number.
         """
         # cd = calculate_by_curve(self._table_data, self._curve, mach)
         # use calculation over list[double] instead of list[DragDataPoint]
@@ -962,8 +961,8 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         look_angle_cos = math.cos(props.look_angle_rad)
         look_angle_sin = math.sin(props.look_angle_rad)
 
-        density_factor, _ = props.get_density_and_mach_for_altitude(range_vector.y)
-        drag = density_factor * velocity * props.drag_by_mach(velocity / mach)
+        density_ratio, _ = props.get_density_and_mach_for_altitude(range_vector.y)
+        drag = props.drag_by_mach(velocity / mach)
 
         return TrajectoryData(
             time=time,
@@ -977,7 +976,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             windage_adj=_new_rad(windage_adjustment),
             slant_distance=_new_feet(range_vector.x * look_angle_cos + range_vector.y * look_angle_sin),
             angle=_new_rad(trajectory_angle),
-            density_factor=density_factor - 1,
+            density_ratio=density_ratio,
             drag=drag,
             energy=_new_ft_lb(calculate_energy(props.weight_grains, velocity)),
             ogw=_new_lb(calculate_ogw(props.weight_grains, velocity)),
@@ -1029,7 +1028,7 @@ def create_trajectory_row(time: float, range_vector: Vector, velocity_vector: Ve
         windage_adj=_new_rad(windage_adjustment),
         slant_distance=_new_feet(range_vector.x * math.cos(look_angle) + range_vector.y * math.sin(look_angle)),
         angle=_new_rad(trajectory_angle),
-        density_factor=density_ratio - 1,
+        density_ratio=density_ratio - 1,
         drag=drag,
         energy=_new_ft_lb(calculate_energy(weight, velocity)),
         ogw=_new_lb(calculate_ogw(weight, velocity)),

@@ -63,7 +63,7 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         ranges: List[TrajectoryData] = []  # Record of TrajectoryData points to return
         time: float = .0
         mach: float = .0
-        density_factor: float = .0
+        density_ratio: float = .0
 
         # region Initialize wind-related variables to first wind reading (if any)
         wind_sock = _WindSock(props.winds)
@@ -104,7 +104,7 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
                 wind_vector = wind_sock.vector_for_range(range_vector.x)
 
             # Update air density at current point in trajectory
-            density_factor, mach = props.get_density_and_mach_for_altitude(range_vector.y)
+            density_ratio, mach = props.get_density_and_mach_for_altitude(range_vector.y)
 
             # region Check whether to record TrajectoryData row at current point
             if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
@@ -117,15 +117,14 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
             # Air resistance seen by bullet is ground velocity minus wind velocity relative to ground
             relative_velocity = velocity_vector - wind_vector
             relative_speed = relative_velocity.magnitude()  # Velocity relative to air
-            # Time step is normalized by velocity so that we take smaller steps when moving faster
             delta_time = props.calc_step
-            km = density_factor * props.drag_by_mach(relative_speed / mach)
-            # drag = km * relative_speed
+            k_m = density_ratio * props.drag_by_mach(relative_speed / mach)
+            # drag = k_m * relative_speed  # This is the "drag rate." Multiply by velocity to get "drag acceleration."
 
             # region RK4 integration
             def f(v: Vector) -> Vector:  # dv/dt (acceleration)
                 # Bullet velocity changes due to both drag and gravity
-                return self.gravity_vector - km * v * v.magnitude()  # type: ignore[operator]
+                return self.gravity_vector - k_m * v * v.magnitude()  # type: ignore[operator]
 
             v1 = f(relative_velocity)
             v2 = f(relative_velocity + 0.5 * delta_time * v1)  # type: ignore[operator]
