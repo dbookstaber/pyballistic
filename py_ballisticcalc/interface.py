@@ -200,9 +200,7 @@ class Calculator(Generic[ConfigT]):
             filter_flags = TrajFlag.ALL
 
         result = self._engine_instance.integrate(shot, trajectory_range, dist_step, time_step, filter_flags)
-        # TODO: Check for RangeError and raise to comply with previous version behavior.
         if result.error:
-            logger.error(f"Trajectory calculation error: {result.error}")
             raise result.error
         return result
 
