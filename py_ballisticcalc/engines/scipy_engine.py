@@ -25,7 +25,7 @@ from py_ballisticcalc.conditions import Wind
 from py_ballisticcalc.engines.base_engine import (
     BaseIntegrationEngine,
     BaseEngineConfigDict,
-    BaseEngineConfig, _ShotProps, _ZeroCalcStatus, with_min_velocity_zero
+    BaseEngineConfig, _ShotProps, _ZeroCalcStatus, with_no_minimum_velocity
 )
 from py_ballisticcalc.exceptions import OutOfRangeError, RangeError, ZeroFindingError
 from py_ballisticcalc.logger import logger
@@ -202,7 +202,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         self.eval_points: List[float] = []  # Points at which diff_eq is called
 
     @override
-    @with_min_velocity_zero
+    @with_no_minimum_velocity
     def _find_max_range(self, props: _ShotProps, angle_bracket_deg: Tuple[float, float] = (0.0, 90.0)) -> Tuple[
         Distance, Angular]:
         """
@@ -258,7 +258,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         return Distance.Feet(max_range_ft), Angular.Radian(angle_at_max_rad)
 
     @override
-    @with_min_velocity_zero
+    @with_no_minimum_velocity
     def _find_zero_angle(self, props: _ShotProps, distance: Distance, lofted: bool = False) -> Angular:
         """
         Internal method to find the barrel elevation needed to hit sight line at a specific distance,

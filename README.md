@@ -266,7 +266,7 @@ print(f'\tInstantiated from Distance.Line(200): {PreferredUnits.distance(Distanc
 
 Create `.pybc.toml` or `pybc.toml` file in your project root directory _(where venv was placed)_.
 Or place this file in user's home directory. _(The file in project root has priority.)_
-Use `loadMetricUnits()`, `loadImperialUnits()` or `loadMixedUnits()` to manualy load one of the presets from [assets](/py_ballisticcalc/assets/) as follows:
+Use [`loadMetricUnits()`](py_ballisticcalc/assets/.pybc-metrics.toml), [`loadImperialUnits()`](py_ballisticcalc/assets/.pybc-imperial.toml) or [`loadMixedUnits()`](py_ballisticcalc/assets/.pybc-mixed.toml) to manualy load one of the presets from [assets](py_ballisticcalc/assets/) as follows:
 
 ```python
 from py_ballisticcalc import loadImperialUnits, loadMetricUnits, loadMixedUnits
@@ -295,14 +295,14 @@ Default engine is RK4.  Recommended for speed: `cythonized_rk4_engine` or `scipy
 
 **See [Engine Benchmarks](doc/BenchmarkEngines.md) for more detailed analysis and comparison of the engines.**
 
-| Engine Name                |  Is Default?   | Relative Performance | Dependencies  | Description                                                                                                                  |
-|:--------------------------|:--------------:|:-------------------------------------|:-------------------------|:-----------------------------------------------------------------------------------------------------------------------------|
-| `rk4_engine`              | :green_circle: | Baseline (1x)                        | None                     | Runge-Kutta 4th-order integration.                                                                                           |
-| `verlet_engine`           |  :red_circle:  |  0.7x (slower)                       | None                     | Velocity Verlet 2nd-order integration.                                                                                       |
-| `euler_engine`            |  :red_circle:  |  0.5x (slower)                       | None                     | Basic Euler integration: 1st-order but easiest to understand.                                                                |
-| `cythonized_rk4_engine`   |  :red_circle:  | 50x faster                           | `py-ballisticcalc[exts]` | Cython-optimized Runge-Kutta 4th-order integration.                                                                          |
-| `cythonized_euler_engine` |  :red_circle:  | 40x faster                           | `py-ballisticcalc[exts]` | Cython-optimized Euler integration.                                                                                          |
-| `scipy_engine`            |  :red_circle:  | 10x faster                           | `scipy`                  | Uses SciPy's advanced and optimized numerical methods.                                                                       |
+| Engine Name               |  Is Default?   | Relative Speed | Dependencies             | Description                                                   |
+|:--------------------------|:--------------:|:---------------|:-------------------------|:--------------------------------------------------------------|
+| `rk4_engine`              | :green_circle: | Baseline (1x)  | None                     | Runge-Kutta 4th-order integration.                            |
+| `verlet_engine`           |  :red_circle:  |  0.7x (slower) | None                     | Velocity Verlet 2nd-order integration.                        |
+| `euler_engine`            |  :red_circle:  |  0.5x (slower) | None                     | Basic Euler integration: 1st-order but easiest to understand. |
+| `cythonized_rk4_engine`   |  :red_circle:  | 50x faster     | `py-ballisticcalc[exts]` | Cython-optimized Runge-Kutta 4th-order integration.           |
+| `cythonized_euler_engine` |  :red_circle:  | 40x faster     | `py-ballisticcalc[exts]` | Cython-optimized Euler integration.                           |
+| `scipy_engine`            |  :red_circle:  | 10x faster     | `scipy`                  | Uses SciPy's advanced and optimized numerical methods.        |
 
 ## Modifying presets
 

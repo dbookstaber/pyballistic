@@ -1,7 +1,9 @@
-# Config template for py_ballisticcalc
+# Mixed Unit configuration for py_ballisticcalc:
+# Metric units for distance, velocity, target, atmosphere;
+# Imperial for bullet and gun dimensions.
 
 title = "py_ballisticcalc config"
-version = "2.1.1b1"
+version = "2.2.0"
 
 [pybc.preferred_units]
 angular = 'Degree'

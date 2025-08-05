@@ -35,7 +35,7 @@ __all__ = (
     'CurvePoint',
     '_ShotProps',
     '_ZeroCalcStatus',
-    'with_min_velocity_zero',
+    'with_no_minimum_velocity',
 )
 
 cZeroFindingAccuracy: float = 0.000005  # Max allowed slant-error in feet to end zero search
@@ -398,7 +398,7 @@ class ZeroFindingProps(NamedTuple):
     start_height_ft: Optional[float] = None
 
 
-def with_min_velocity_zero(method):
+def with_no_minimum_velocity(method):
     def wrapper(self, *args, **kwargs):
         restore = None
         if getattr(self._config, "cMinimumVelocity", None) != 0:
@@ -488,7 +488,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_max_range(props, angle_bracket_deg)
 
-    @with_min_velocity_zero
+    @with_no_minimum_velocity
     def _find_max_range(self, props: _ShotProps, angle_bracket_deg: Tuple[float, float] = (0, 90)) -> Tuple[
         Distance, Angular]:
         """
@@ -588,7 +588,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_apex(props)
 
-    @with_min_velocity_zero
+    @with_no_minimum_velocity
     def _find_apex(self, props: _ShotProps) -> TrajectoryData:
         """
         Internal implementation to find the apex of the trajectory.
@@ -663,7 +663,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_zero_angle(props, distance, lofted)
 
-    @with_min_velocity_zero
+    @with_no_minimum_velocity
     def _find_zero_angle(self, props: _ShotProps, distance: Distance, lofted: bool = False) -> Angular:
         """
         Internal implementation to find the barrel elevation needed to hit sight line at a specific distance,
