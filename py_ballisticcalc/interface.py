@@ -168,24 +168,27 @@ class Calculator(Generic[ConfigT]):
         shot.weapon.zero_elevation = self.barrel_elevation_for_target(shot, zero_distance)
         return shot.weapon.zero_elevation
 
-    def fire(self, shot: Shot, trajectory_range: Union[float, Distance],
+    def fire(self, shot: Shot,
+             trajectory_range: Union[float, Distance],
              trajectory_step: Optional[Union[float, Distance]] = None,
              extra_data: bool = False,
-             time_step: float = 0.0) -> HitResult:
+             time_step: float = 0.0,
+             raise_range_error: bool = True) -> HitResult:
         """Calculates the trajectory for the given shot parameters.
 
         Args:
             shot (Shot): Initial shot parameters, including position and barrel angle.
             trajectory_range (float | Distance): Distance at which to stop computing the trajectory.
-            trajectory_step (float | Distance | None, optional): Step between recorded trajectory points.
-                If 0 or None, defaults to `trajectory_range`. Defaults to 0.
-            extra_data (bool, optional): If True, stores trajectory data for every internal step;
-                if False, stores only at intervals of `trajectory_step`. Defaults to False.
+            trajectory_step (float | Distance | None, optional): Distance between recorded trajectory points.
+                If 0 or None, defaults to `trajectory_range`.
+            extra_data (bool, optional): If True, requests all TrajFlags. Otherwise only requests TrajFlag.RANGE.
+                Defaults to False.
             time_step (float, optional): Minimum time sampling interval in seconds. If > 0, data is
                 recorded at least this frequently. Defaults to 0.0.
+            raise_range_error (bool, optional): If True, raises RangeError if returned by integration.
 
         Returns:
-            HitResult: Object containing computed trajectory and hit information.
+            HitResult: Object containing computed trajectory.
         """
         trajectory_range = PreferredUnits.distance(trajectory_range)
         dist_step = trajectory_range
@@ -200,7 +203,7 @@ class Calculator(Generic[ConfigT]):
             filter_flags = TrajFlag.ALL
 
         result = self._engine_instance.integrate(shot, trajectory_range, dist_step, time_step, filter_flags)
-        if result.error:
+        if result.error and raise_range_error:
             raise result.error
         return result
 

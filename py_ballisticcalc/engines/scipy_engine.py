@@ -25,11 +25,11 @@ from py_ballisticcalc.conditions import Wind
 from py_ballisticcalc.engines.base_engine import (
     BaseIntegrationEngine,
     BaseEngineConfigDict,
-    BaseEngineConfig, _ShotProps, _ZeroCalcStatus, with_no_minimum_velocity
+    BaseEngineConfig, _ZeroCalcStatus, with_no_minimum_velocity
 )
 from py_ballisticcalc.exceptions import OutOfRangeError, RangeError, ZeroFindingError
 from py_ballisticcalc.logger import logger
-from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, HitResult
+from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, ShotProps, HitResult, make_trajectory_row
 from py_ballisticcalc.unit import Distance, Angular
 from py_ballisticcalc.vector import Vector
 
@@ -203,7 +203,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
 
     @override
     @with_no_minimum_velocity
-    def _find_max_range(self, props: _ShotProps, angle_bracket_deg: Tuple[float, float] = (0.0, 90.0)) -> Tuple[
+    def _find_max_range(self, props: ShotProps, angle_bracket_deg: Tuple[float, float] = (0.0, 90.0)) -> Tuple[
         Distance, Angular]:
         """
         Finds the maximum range along the look_angle and the launch angle to reach it.
@@ -259,7 +259,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
 
     @override
     @with_no_minimum_velocity
-    def _find_zero_angle(self, props: _ShotProps, distance: Distance, lofted: bool = False) -> Angular:
+    def _find_zero_angle(self, props: ShotProps, distance: Distance, lofted: bool = False) -> Angular:
         """
         Internal method to find the barrel elevation needed to hit sight line at a specific distance,
             using SciPy's root_scalar.
@@ -338,7 +338,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         return Angular.Radian(sol.root)
 
     @override
-    def _zero_angle(self, props: _ShotProps, distance: Distance) -> Angular:
+    def _zero_angle(self, props: ShotProps, distance: Distance) -> Angular:
         """
         Iterative algorithm to find barrel elevation needed for a particular zero.
             Falls back on ._find_zero_angle().
@@ -359,7 +359,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             return self._find_zero_angle(props, distance)
 
     @override
-    def _integrate(self, props: _ShotProps, range_limit_ft: float, range_step_ft: float,
+    def _integrate(self, props: ShotProps, range_limit_ft: float, range_step_ft: float,
                    time_step: float = 0.0, filter_flags: Union[TrajFlag, int] = TrajFlag.NONE,
                    dense_output: bool = False, stop_at_zero: bool = False, **kwargs) -> HitResult:
         """
@@ -506,7 +506,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                 position = Vector(*state[0:3])
                 velocity = Vector(*state[3:6])
                 density_ratio, mach = props.get_density_and_mach_for_altitude(position[1])
-                return self._make_row(props, t, position, velocity, mach, flag)
+                return make_trajectory_row(props, t, position, velocity, mach, flag)
 
             if sol.t[-1] == 0:
                 # If the last time is 0, we only have the initial state
@@ -645,4 +645,4 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         error = None
         if termination_reason is not None and termination_reason is not self.HitZero:
             error = RangeError(termination_reason, ranges)
-        return HitResult(props.shot, ranges, filter_flags > 0, error)
+        return HitResult(props, ranges, filter_flags > 0, error)

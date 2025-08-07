@@ -7,7 +7,6 @@ import pytest
 from py_ballisticcalc import (DragModel, TableG1, Distance, Weight, Ammo, Velocity, Weapon, Shot,
                               Angular, Calculator, RangeError, HitResult, BaseEngineConfigDict,
                               loadImperialUnits, loadMetricUnits, PreferredUnits)
-from py_ballisticcalc.helpers import must_fire
 
 
 def get_object_attribute_values_as_dict(obj: Any) -> dict[str, Any]:
@@ -35,10 +34,10 @@ class TestIssue96_97:
         with pytest.raises(RangeError, match="Max range not reached"):
             self.calc.fire(self.zero, self.trange, extra_data=True)
 
-        hit_result, err = must_fire(self.calc, self.zero, self.trange, extra_data=True)
+        hit_result = self.calc.fire(self.zero, self.trange, extra_data=True, raise_range_error=False)
 
         # should return error
-        assert isinstance(err, RangeError)
+        assert isinstance(hit_result.error, RangeError)
         assert isinstance(hit_result, HitResult), f"Expected HitResult but got {type(hit_result)}"
 
 

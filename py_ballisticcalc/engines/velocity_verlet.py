@@ -8,14 +8,14 @@ import warnings
 from typing_extensions import Union, List, override
 
 from py_ballisticcalc.engines.base_engine import (
+    BaseEngineConfigDict,
     BaseIntegrationEngine,
     _TrajectoryDataFilter,
     _WindSock,
-    BaseEngineConfigDict, _ShotProps
 )
 from py_ballisticcalc.exceptions import RangeError
 from py_ballisticcalc.logger import logger
-from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, HitResult
+from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, ShotProps, HitResult, make_trajectory_row
 from py_ballisticcalc.vector import Vector
 
 __all__ = ('VelocityVerletIntegrationEngine',)
@@ -34,7 +34,7 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
         return super().get_calc_step() * self.DEFAULT_TIME_STEP
 
     @override
-    def _integrate(self, props: _ShotProps, range_limit_ft: float, range_step_ft: float,
+    def _integrate(self, props: ShotProps, range_limit_ft: float, range_step_ft: float,
                    time_step: float = 0.0, filter_flags: Union[TrajFlag, int] = TrajFlag.NONE,
                    dense_output: bool = False, **kwargs) -> HitResult:
         """
@@ -114,7 +114,7 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
 
             # region Check whether to record TrajectoryData row at current point
             if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
-                ranges.append(self._make_row(
+                ranges.append(make_trajectory_row(
                     props, data.time, data.position, data.velocity, data.mach, data_filter.current_flag)
                 )
                 last_recorded_range = data.position.x
@@ -156,7 +156,7 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
                 break
         # endregion
         if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
-            ranges.append(self._make_row(
+            ranges.append(make_trajectory_row(
                 props, data.time, data.position, data.velocity, data.mach, data_filter.current_flag)
             )
         # Ensure that we have at least two data points in trajectory, or 1 if filter_flags==NONE
@@ -165,11 +165,11 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
             if len(ranges) > 0 and ranges[-1].time == time:  # But don't duplicate the last point.
                 pass
             else:
-                ranges.append(self._make_row(
+                ranges.append(make_trajectory_row(
                     props, time, range_vector, velocity_vector, mach, TrajFlag.NONE)
                 )
         logger.debug(f"Velocity Verlet ran {self.integration_step_count - start_integration_step_count} iterations")
         error = None
         if termination_reason is not None:
             error = RangeError(termination_reason, ranges)
-        return HitResult(props.shot, ranges, filter_flags > 0, error)
+        return HitResult(props, ranges, filter_flags > 0, error)

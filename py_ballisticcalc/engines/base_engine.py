@@ -5,19 +5,18 @@
 import math
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from enum import Enum, auto
-from deprecated import deprecated
 
-from typing_extensions import Optional, NamedTuple, Union, List, Tuple, Dict, TypedDict, TypeVar
+from typing_extensions import List, Optional, NamedTuple, Union, Tuple, Dict, TypedDict, TypeVar
 
 from py_ballisticcalc.conditions import Shot, Wind
 from py_ballisticcalc.drag_model import DragDataPoint
 from py_ballisticcalc.exceptions import ZeroFindingError, OutOfRangeError, SolverRuntimeError
 from py_ballisticcalc.generics.engine import EngineProtocol
 from py_ballisticcalc.logger import logger
-from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, HitResult
-from py_ballisticcalc.unit import Distance, Angular, Velocity, Weight, Energy, Pressure, Temperature, Unit
+from py_ballisticcalc.trajectory_data import *
+from py_ballisticcalc.unit import Distance, Angular, Velocity, Weight
 from py_ballisticcalc.vector import Vector
 
 __all__ = (
@@ -26,14 +25,8 @@ __all__ = (
     'BaseEngineConfigDict',
     'DEFAULT_BASE_ENGINE_CONFIG',
     'BaseIntegrationEngine',
-    'calculate_energy',
-    'calculate_ogw',
-    'get_correction',
-    'create_trajectory_row',
     '_TrajectoryDataFilter',
     '_WindSock',
-    'CurvePoint',
-    '_ShotProps',
     '_ZeroCalcStatus',
     'with_no_minimum_velocity',
 )
@@ -76,21 +69,6 @@ def create_base_engine_config(interface_config: Optional[BaseEngineConfigDict] =
     if interface_config is not None and isinstance(interface_config, dict):
         config.update(interface_config)
     return BaseEngineConfig(**config)
-
-
-class CurvePoint(NamedTuple):
-    """Coefficients for quadratic interpolation"""
-    a: float
-    b: float
-    c: float
-
-
-class BaseTrajData(NamedTuple):
-    """Minimal data for one point in ballistic trajectory"""
-    time: float
-    position: Vector
-    velocity: Vector
-    mach: float
 
 
 class _TrajectoryDataFilter:
@@ -285,105 +263,6 @@ class _WindSock:
         return self.current_vector()
 
 
-@dataclass
-class _ShotProps:
-    """Properties for a Shot used in trajectory calculations, converted to internal units."""
-    shot: Shot
-    bc: float  # Ballistic coefficient
-    curve: List[CurvePoint]
-    mach_list: List[float]
-
-    look_angle_rad: float
-    twist_inch: float  # Twist rate of barrel rifling, in inches of length to make one full rotation.
-    length_inch: float  # Length of the bullet in inches
-    diameter_inch: float  # Diameter of the bullet in inches
-    weight_grains: float  # Weight of the bullet in grains
-    barrel_elevation_rad: float  # Barrel elevation angle in radians
-    barrel_azimuth_rad: float  # Barrel azimuth angle in radians
-    sight_height_ft: float  # Height of the sight above the bore in feet
-    cant_cosine: float  # Cosine of the cant angle
-    cant_sine: float  # Sine of the cant angle
-    alt0_ft: float  # Initial altitude in feet
-    calc_step: float  # Calculation step size
-    muzzle_velocity_fps: float  # Muzzle velocity in feet per second
-    stability_coefficient: float = field(init=False)
-
-    def __post_init__(self):
-        self.stability_coefficient = self._calc_stability_coefficient()
-
-    @property
-    def winds(self) -> Tuple[Wind, ...]:
-        return self.shot.winds
-
-    def drag_by_mach(self, mach: float) -> float:
-        """
-        Calculates a standard drag factor (SDF) for the given Mach number.  Where:
-            Drag force = V^2 * AirDensity * C_d * S / 2m
-                       = V^2 * density_ratio * SDF
-        Where:
-            - density_ratio = LocalAirDensity / StandardDensity = rho / rho_0
-            - StandardDensity of Air = rho_0 = 0.076474 lb/ft^3
-            - S is cross-section = d^2 pi/4, where d is bullet diameter in inches
-            - m is bullet mass in pounds
-            - bc contains m/d^2 in units lb/in^2, which is multiplied by 144 to convert to lb/ft^2
-
-        Thus:
-            - The magic constant found here = StandardDensity * pi / (4 * 2 * 144)
-
-        Args:
-            mach (float): The Mach number.
-
-        Returns:
-            float: The standard drag factor at the given Mach number.
-        """
-        # cd = calculate_by_curve(self._table_data, self._curve, mach)
-        # use calculation over list[double] instead of list[DragDataPoint]
-        cd = _calculate_by_curve_and_mach_list(self.mach_list, self.curve, mach)
-        return cd * 2.08551e-04 / self.bc
-
-    def spin_drift(self, time) -> float:
-        """
-        Litz spin-drift approximation
-
-        Args:
-            time: Time of flight
-
-        Returns:
-            windage due to spin drift, in feet
-        """
-        if (self.stability_coefficient != 0) and (self.twist_inch != 0):
-            sign = 1 if self.twist_inch > 0 else -1
-            return sign * (1.25 * (self.stability_coefficient + 1.2)
-                           * math.pow(time, 1.83)) / 12
-        return 0
-
-    def _calc_stability_coefficient(self) -> float:
-        """
-        Calculates the Miller stability coefficient.
-
-        Returns:
-            float: The Miller stability coefficient.
-        """
-        if self.twist_inch and self.length_inch and self.diameter_inch and self.shot.atmo.pressure.raw_value:
-            twist_rate = math.fabs(self.twist_inch) / self.diameter_inch
-            length = self.length_inch / self.diameter_inch
-            # Miller stability formula
-            sd = 30 * self.weight_grains / (
-                    math.pow(twist_rate, 2) * math.pow(self.diameter_inch, 3) * length * (1 + math.pow(length, 2))
-            )
-            # Velocity correction factor
-            fv = math.pow(self.muzzle_velocity_fps / 2800, 1.0 / 3.0)
-            # Atmospheric correction
-            ft = self.shot.atmo.temperature >> Temperature.Fahrenheit
-            pt = self.shot.atmo.pressure >> Pressure.InHg
-            ftp = ((ft + 460) / (59 + 460)) * (29.92 / pt)
-            return sd * fv * ftp
-        return 0
-
-    def get_density_and_mach_for_altitude(self, drop: float):
-        return self.shot.atmo.get_density_and_mach_for_altitude(self.alt0_ft + drop)
-
-
 class _ZeroCalcStatus(Enum):
     DONE = auto()  # Zero angle found, just return it
     CONTINUE = auto()  # Continue searching for zero angle
@@ -438,14 +317,14 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         """Get step size for integration."""
         return self._config.cStepMultiplier
 
-    def _init_trajectory(self, shot_info: Shot) -> _ShotProps:
+    def _init_trajectory(self, shot_info: Shot) -> ShotProps:
         """
         Converts Shot properties into floats dimensioned in internal units.
 
         Args:
             shot_info (Shot): Information about the shot.
         """
-        return _ShotProps(
+        return ShotProps(
             shot=shot_info,
             bc=shot_info.ammo.dm.BC,
             curve=calculate_curve(shot_info.ammo.dm.drag_table),
@@ -489,7 +368,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         return self._find_max_range(props, angle_bracket_deg)
 
     @with_no_minimum_velocity
-    def _find_max_range(self, props: _ShotProps, angle_bracket_deg: Tuple[float, float] = (0, 90)) -> Tuple[
+    def _find_max_range(self, props: ShotProps, angle_bracket_deg: Tuple[float, float] = (0, 90)) -> Tuple[
         Distance, Angular]:
         """
         Internal function to find the maximum slant range via golden-section search.
@@ -589,7 +468,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         return self._find_apex(props)
 
     @with_no_minimum_velocity
-    def _find_apex(self, props: _ShotProps) -> TrajectoryData:
+    def _find_apex(self, props: ShotProps) -> TrajectoryData:
         """
         Internal implementation to find the apex of the trajectory.
 
@@ -611,7 +490,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             raise SolverRuntimeError("No apex flagged in trajectory data")
         return apex
 
-    def _init_zero_calculation(self, props: _ShotProps, distance: Distance) -> ZeroFindingProps:
+    def _init_zero_calculation(self, props: ShotProps, distance: Distance) -> ZeroFindingProps:
         """
         Initializes the zero calculation for the given shot and distance.
             Handles edge cases.
@@ -664,7 +543,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         return self._find_zero_angle(props, distance, lofted)
 
     @with_no_minimum_velocity
-    def _find_zero_angle(self, props: _ShotProps, distance: Distance, lofted: bool = False) -> Angular:
+    def _find_zero_angle(self, props: ShotProps, distance: Distance, lofted: bool = False) -> Angular:
         """
         Internal implementation to find the barrel elevation needed to hit sight line at a specific distance,
             using Ridder's method for guaranteed convergence.
@@ -777,7 +656,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             # Fallback to guaranteed method
             return self._find_zero_angle(props, distance)
 
-    def _zero_angle(self, props: _ShotProps, distance: Distance) -> Angular:
+    def _zero_angle(self, props: ShotProps, distance: Distance) -> Angular:
         """
         Iterative algorithm to find barrel elevation needed for a particular zero
 
@@ -921,7 +800,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         return self._integrate(props, range_limit_ft, range_step_ft, time_step, filter_flags, dense_output)
 
     @abstractmethod
-    def _integrate(self, props: _ShotProps, range_limit_ft: float, range_step_ft: float,
+    def _integrate(self, props: ShotProps, range_limit_ft: float, range_step_ft: float,
                    time_step: float = 0.0, filter_flags: Union[TrajFlag, int] = TrajFlag.NONE,
                    dense_output: bool = False, **kwargs) -> HitResult:
         """
@@ -943,246 +822,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         """
         raise NotImplementedError
 
-    def _make_row(self,
-                  props: _ShotProps,
-                  time: float,
-                  range_vector: Vector,
-                  velocity_vector: Vector,
-                  mach: float,
-                  flag: Union[TrajFlag, int] = TrajFlag.NONE):
 
-        spin_drift = props.spin_drift(time)
-        velocity = velocity_vector.magnitude()
-        windage = range_vector.z + spin_drift
-        drop_adjustment = get_correction(range_vector.x, range_vector.y)
-        windage_adjustment = get_correction(range_vector.x, windage)
-        trajectory_angle = math.atan2(velocity_vector.y, velocity_vector.x)
-
-        look_angle_cos = math.cos(props.look_angle_rad)
-        look_angle_sin = math.sin(props.look_angle_rad)
-
-        density_ratio, _ = props.get_density_and_mach_for_altitude(range_vector.y)
-        drag = props.drag_by_mach(velocity / mach)
-
-        return TrajectoryData(
-            time=time,
-            distance=_new_feet(range_vector.x),
-            velocity=_new_fps(velocity),
-            mach=velocity / mach,
-            height=_new_feet(range_vector.y),
-            slant_height=_new_feet(range_vector.y * look_angle_cos - range_vector.x * look_angle_sin),
-            drop_adj=_new_rad(drop_adjustment - (props.look_angle_rad if range_vector.x else 0)),
-            windage=_new_feet(windage),
-            windage_adj=_new_rad(windage_adjustment),
-            slant_distance=_new_feet(range_vector.x * look_angle_cos + range_vector.y * look_angle_sin),
-            angle=_new_rad(trajectory_angle),
-            density_ratio=density_ratio,
-            drag=drag,
-            energy=_new_ft_lb(calculate_energy(props.weight_grains, velocity)),
-            ogw=_new_lb(calculate_ogw(props.weight_grains, velocity)),
-            flag=flag
-        )
-
-
-# pylint: disable=too-many-positional-arguments
-@deprecated(reason="Use BaseIntegrationEngine._make_row instead.")
-def create_trajectory_row(time: float, range_vector: Vector, velocity_vector: Vector,
-                          velocity: float, mach: float, spin_drift: float, look_angle: float,
-                          density_ratio: float, drag: float, weight: float,
-                          flag: Union[TrajFlag, int]) -> TrajectoryData:
-    """
-    Creates a TrajectoryData object representing a single row of trajectory data.
-
-    Args:
-        time (float): Time of flight in seconds.
-        range_vector (Vector): Position vector in feet.
-        velocity_vector (Vector): Velocity vector in fps.
-        velocity (float): Velocity magnitude in fps.
-        mach (float): Mach number.
-        spin_drift (float): Spin drift in feet.
-        look_angle (float): Slant angle in radians.
-        density_ratio (float): Density ratio (rho / rho_0).
-        drag (float): Drag value.
-        weight (float): Weight value.
-        flag (Union[TrajFlag, int]): Flag value.
-
-    Returns:
-        TrajectoryData: A TrajectoryData object representing the trajectory data.
-    """
-    warnings.warn("This method is deprecated", DeprecationWarning)
-
-    windage = range_vector.z + spin_drift
-    drop_adjustment = get_correction(range_vector.x, range_vector.y)
-    windage_adjustment = get_correction(range_vector.x, windage)
-    trajectory_angle = math.atan2(velocity_vector.y, velocity_vector.x)
-
-    return TrajectoryData(
-        time=time,
-        distance=_new_feet(range_vector.x),
-        velocity=_new_fps(velocity),
-        mach=velocity / mach,
-        height=_new_feet(range_vector.y),
-        slant_height=_new_feet(range_vector.y * math.cos(look_angle) - range_vector.x * math.sin(look_angle)),
-        drop_adj=_new_rad(drop_adjustment - (look_angle if range_vector.x else 0)),
-        windage=_new_feet(windage),
-        windage_adj=_new_rad(windage_adjustment),
-        slant_distance=_new_feet(range_vector.x * math.cos(look_angle) + range_vector.y * math.sin(look_angle)),
-        angle=_new_rad(trajectory_angle),
-        density_ratio=density_ratio - 1,
-        drag=drag,
-        energy=_new_ft_lb(calculate_energy(weight, velocity)),
-        ogw=_new_lb(calculate_ogw(weight, velocity)),
-        flag=flag
-    )
-
-
-def _new_feet(v: float):
-    d = object.__new__(Distance)
-    d._value = v * 12
-    d._defined_units = Unit.Foot
-    return d
-
-
-def _new_fps(v: float):
-    d = object.__new__(Velocity)
-    d._value = v / 3.2808399
-    d._defined_units = Unit.FPS
-    return d
-
-
-def _new_rad(v: float):
-    d = object.__new__(Angular)
-    d._value = v
-    d._defined_units = Unit.Radian
-    return d
-
-
-def _new_ft_lb(v: float):
-    d = object.__new__(Energy)
-    d._value = v
-    d._defined_units = Unit.FootPound
-    return d
-
-
-def _new_lb(v: float):
-    d = object.__new__(Weight)
-    d._value = v / 0.000142857143
-    d._defined_units = Unit.Pound
-    return d
-
-
-def get_correction(distance: float, offset: float) -> float:
-    """Calculates the sight adjustment in radians.
-
-    Args:
-        distance (float): The distance to the target in feet.
-        offset (float): The offset from the target in feet.
-
-    Returns:
-        float: The sight adjustment in radians.
-    """
-    if distance != 0:
-        return math.atan(offset / distance)
-    return 0  # None
-
-
-def calculate_energy(bullet_weight: float, velocity: float) -> float:
-    """Calculates the kinetic energy of a projectile.
-
-    Args:
-        bullet_weight (float): The weight of the bullet in pounds.
-        velocity (float): The velocity of the bullet in feet per second.
-
-    Returns:
-        float: The kinetic energy of the projectile in foot-pounds.
-    """
-    return bullet_weight * math.pow(velocity, 2) / 450400
-
-
-def calculate_ogw(bullet_weight: float, velocity: float) -> float:
-    """Calculates the optimal game weight for a projectile.
-
-    Args:
-        bullet_weight (float): The weight of the bullet in pounds.
-        velocity (float): The velocity of the bullet in feet per second.
-
-    Returns:
-        float: The optimal game weight in pounds.
-    """
-    return math.pow(bullet_weight, 2) * math.pow(velocity, 3) * 1.5e-12
-
-
-def calculate_curve(data_points: List[DragDataPoint]) -> List[CurvePoint]:
-    """Piecewise quadratic interpolation of drag curve
-    Args:
-        data_points: List[{Mach, CD}] data_points in ascending Mach order
-    Returns:
-        List[CurvePoints] to interpolate drag coefficient
-    """
-    # rate, x1, x2, x3, y1, y2, y3, a, b, c
-    # curve = []
-    # curve_point
-    # num_points, len_data_points, len_data_range
-
-    rate = (data_points[1].CD - data_points[0].CD
-            ) / (data_points[1].Mach - data_points[0].Mach)
-    curve = [CurvePoint(0, rate, data_points[0].CD - data_points[0].Mach * rate)]
-    len_data_points = int(len(data_points))
-    len_data_range = len_data_points - 1
-
-    for i in range(1, len_data_range):
-        x1 = data_points[i - 1].Mach
-        x2 = data_points[i].Mach
-        x3 = data_points[i + 1].Mach
-        y1 = data_points[i - 1].CD
-        y2 = data_points[i].CD
-        y3 = data_points[i + 1].CD
-        a = ((y3 - y1) * (x2 - x1) - (y2 - y1) * (x3 - x1)) / (
-            (x3 * x3 - x1 * x1) * (x2 - x1) - (x2 * x2 - x1 * x1) * (x3 - x1))
-        b = (y2 - y1 - a * (x2 * x2 - x1 * x1)) / (x2 - x1)
-        c = y1 - (a * x1 * x1 + b * x1)
-        curve_point = CurvePoint(a, b, c)
-        curve.append(curve_point)
-
-    num_points = len_data_points
-    rate = (data_points[num_points - 1].CD - data_points[num_points - 2].CD) / \
-           (data_points[num_points - 1].Mach - data_points[num_points - 2].Mach)
-    curve_point = CurvePoint(
-        0, rate, data_points[num_points - 1].CD - data_points[num_points - 2].Mach * rate
-    )
-    curve.append(curve_point)
-    return curve
-
-
-# # use ._get_only_mach_data with ._calculate_by_curve_and_mach_list because it's faster
-# def calculate_by_curve(data: List[DragDataPoint], curve: List[CurvePoint], mach: float) -> float:
-#     """
-#     Binary search for drag coefficient based on Mach number
-#     :param data: data
-#     :param curve: Output of calculate_curve(data)
-#     :param mach: Mach value for which we're searching for CD
-#     :return float: drag coefficient
-#     """
-#     num_points = int(len(curve))
-#     mlo = 0
-#     mhi = num_points - 2
-#
-#     while mhi - mlo > 1:
-#         mid = int(math.floor(mhi + mlo) / 2.0)
-#         if data[mid].Mach < mach:
-#             mlo = mid
-#         else:
-#             mhi = mid
-#
-#     if data[mhi].Mach - mach > mach - data[mlo].Mach:
-#         m = mlo
-#     else:
-#         m = mhi
-#     curve_m = curve[m]
-#     return curve_m.c + mach * (curve_m.b + curve_m.a * mach)
-
-
-# Function to convert a list of DragDataPoint to an array of doubles containing only Mach values
 def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
     """
     Extracts Mach values from a list of DragDataPoint objects.
@@ -1194,39 +834,3 @@ def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
         List[float]: A list containing only the Mach values from the input data.
     """
     return [dp.Mach for dp in data]
-
-
-def _calculate_by_curve_and_mach_list(mach_list: List[float], curve: List[CurvePoint], mach: float) -> float:
-    """
-    Calculates a value based on a piecewise quadratic curve and a list of Mach values.
-
-    This function performs a binary search on the `mach_list` to find the segment
-    of the `curve` relevant to the input `mach` number and then interpolates
-    the value using the quadratic coefficients of that curve segment.
-
-    Args:
-        mach_list (List[float]): A sorted list of Mach values corresponding to the `curve` points.
-        curve (List[CurvePoint]): A list of CurvePoint objects, where each object
-            contains quadratic coefficients (a, b, c) for a Mach number segment.
-        mach (float): The Mach number at which to calculate the value.
-
-    Returns:
-        float: The calculated value based on the interpolated curve at the given Mach number.
-    """
-    num_points = len(curve)
-    mlo = 0
-    mhi = num_points - 2
-
-    while mhi - mlo > 1:
-        mid = (mhi + mlo) // 2
-        if mach_list[mid] < mach:
-            mlo = mid
-        else:
-            mhi = mid
-
-    if mach_list[mhi] - mach > mach - mach_list[mlo]:
-        m = mlo
-    else:
-        m = mhi
-    curve_m = curve[m]
-    return curve_m.c + mach * (curve_m.b + curve_m.a * mach)

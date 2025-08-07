@@ -1,5 +1,6 @@
 import bisect
 import math
+from deprecated import deprecated
 from typing import Callable, Any, Final, List, Tuple, Optional
 
 from py_ballisticcalc.conditions import Shot
@@ -10,16 +11,12 @@ from py_ballisticcalc.unit import Velocity, Distance
 
 EARTH_GRAVITY_CONSTANT_IN_SI: Final[float] = 9.81  # Acceleration due to gravity (m/s^2)
 
-
+@deprecated("Just call `Calculator.fire` directly with `raise_range_error=False`")
 def must_fire(interface: Calculator, shot: Shot, trajectory_range: Distance, extra_data: bool = False,
               **kwargs) -> Tuple[HitResult, Optional[RangeError]]:
-    """wrapper function to resolve RangeError and get HitResult"""
-    try:
-        # try to get valid result
-        return interface.fire(shot, trajectory_range, **kwargs, extra_data=extra_data), None
-    except RangeError as err:
-        # directly init hit result with incomplete data before exception occurred
-        return HitResult(shot, err.incomplete_trajectory, extra=extra_data), err
+    """Wrapper function to resolve RangeError and get HitResult"""
+    t = interface.fire(shot, trajectory_range, **kwargs, extra_data=extra_data, raise_range_error=False)
+    return t, t.error
 
 
 def vacuum_range(

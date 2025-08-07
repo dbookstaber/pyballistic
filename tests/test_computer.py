@@ -6,7 +6,6 @@ import pytest
 from py_ballisticcalc import (DragModel, Ammo, Weapon, Calculator, Shot, Wind, Atmo, TableG7, RangeError, TrajFlag,
                               BaseEngineConfigDict
 )
-from py_ballisticcalc.helpers import must_fire
 from py_ballisticcalc.unit import *
 
 
@@ -249,9 +248,9 @@ class TestComputerPytest:
         calc = Calculator(config=conf, engine=loaded_engine_instance)
         shot = Shot(ammo=self.ammo)
         shot.relative_angle = Angular.Radian(-0.1)
-        t, r = must_fire(calc, shot, trajectory_range=Distance.Meter(100))
+        t = calc.fire(shot, trajectory_range=Distance.Meter(100), raise_range_error=False)
         assert len(t.trajectory) >= 1
-        assert isinstance(r, RangeError)
+        assert isinstance(t.error, RangeError)
 
     def test_winds_sort(self):
         """Test that the winds are sorted by until_distance"""
