@@ -29,40 +29,20 @@ def test_shot_incomplete(zero_height_calc):
         assert last_point_height < 1e-10  # Basically zero; allow for rounding
 
     extra_data = False
-    try:
-        hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data)
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
+    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
-    try:
-        hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, trajectory_step=range)
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
+    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, trajectory_step=range, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
     extra_data = True
-    try:
-        hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data)
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
+    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
-    try:
-        hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, trajectory_step=range)
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
+    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, trajectory_step=range, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
@@ -108,13 +88,8 @@ def test_no_duplicate_points(loaded_engine_instance):
         cMaximumDrop=-10.0,
     )
     calc = Calculator(config=config, engine=loaded_engine_instance)
-    try:
-        extra_data = False
-        hit_result = calc.fire(shot, range, extra_data=extra_data, trajectory_step=Distance.Meter(100))
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
+    extra_data = False
+    hit_result = calc.fire(shot, range, extra_data=extra_data, trajectory_step=Distance.Meter(100), raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     assert len(hit_result.trajectory) >= 2
     assert hit_result[-2] != hit_result[-1]
@@ -133,15 +108,9 @@ def test_no_duplicated_point_many_trajectories(zero_height_calc):
         angle = 0
         while angle <= 90:
             shot = shot_with_relative_angle_in_degrees(angle)
-            try:
-                hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data)
-            except RangeError as e:
-                if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-                    print(f'Got range error {e=}')
-                    hit_result = HitResult(shot, e.incomplete_trajectory, extra_data)
-
-                else:
-                    raise e
+            hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
+            if hit_result.error is not None:
+                print(f'Got {hit_result.error=}')
             print(f'{len(hit_result.trajectory)=}')
             assert len(hit_result.trajectory) == len(set(hit_result.trajectory))
             angle += 10

@@ -6,10 +6,10 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum
 from math import pi
-from typing import NamedTuple, Union, TypeVar, Optional, Tuple, Final, Protocol, override, runtime_checkable, \
+from typing import NamedTuple, Union, TypeVar, Optional, Tuple, Final, Protocol, runtime_checkable, \
     SupportsFloat, SupportsInt, Hashable, Generic, Mapping, Any, Iterable, Sequence, Callable, Generator
 
-from typing_extensions import Self, TypeAlias
+from typing_extensions import Self, TypeAlias, override
 
 from py_ballisticcalc.exceptions import UnitTypeError, UnitConversionError, UnitAliasError
 from py_ballisticcalc.logger import logger
