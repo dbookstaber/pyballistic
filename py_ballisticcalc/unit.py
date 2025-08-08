@@ -1,12 +1,12 @@
 """
-Useful types for PreferredUnits of measurement and conversion for ballistics calculations
+Units of measurement and conversion for ballistic calculations
 """
 
 import re
 from dataclasses import dataclass
 from enum import IntEnum
-from math import pi, atan, tan
-from typing import NamedTuple, Union, TypeVar, Optional, Tuple, Final, Protocol, runtime_checkable, \
+from math import pi
+from typing import NamedTuple, Union, TypeVar, Optional, Tuple, Final, Protocol, override, runtime_checkable, \
     SupportsFloat, SupportsInt, Hashable, Generic, Mapping, Any, Iterable, Sequence, Callable, Generator
 
 from typing_extensions import Self, TypeAlias
@@ -450,19 +450,20 @@ class Measurable(SupportsFloat, SupportsInt, Hashable, Comparable, Protocol):
 
 
 class GenericDimension(Generic[_GenericDimensionType]):
-    """Abstract class for unit of measure instance definition.
-    Stores defined unit and value, applies conversions to other prefer_units.
+    """Abstract class for units of measure.
+        Stores defined unit and value, applies conversions to related Units.
     """
     _value: Number
     _defined_units: Unit
     __slots__ = ('_value', '_defined_units')
+    _conversion_factors: Mapping[Unit, float] = {}
 
     def __init__(self, value: Number, units: Unit):
         """
         :param units: unit as Unit enum
         :param value: numeric value of the unit
         """
-        self._value: Number = self.to_raw(value, units)
+        self._value: Number = self.__class__.to_raw(value, units)
         self._defined_units: Unit = units
 
     def __str__(self) -> str:
@@ -504,73 +505,57 @@ class GenericDimension(Generic[_GenericDimensionType]):
     def __ge__(self, other) -> bool:
         return float(self) >= other
 
-    # def __lshift__(self, other: Unit) -> Self:
-    #     return self.convert(other)
-
-    # def __rshift__(self, other: Unit) -> Number:
-    #     return self.get_in(other)
-
-    # def __rlshift__(self, other: Unit) -> Self:
-    #     return self.convert(other)
-
-    def _validate_unit_type(self, value: Number, units: Unit):
-        """Validates the prefer_units
-        :param value: value of the instance
-        :param units: Unit enum type
-        :return: value in specified prefer_units
-        """
+    @classmethod
+    def _validate_unit_type(cls, units: Unit):
+        """Ensures units are members of the same Dimension."""
         if not isinstance(units, Unit):
-            err_msg = f"Type expected: {Unit}, {type(Unit).__name__} " \
-                      f"found: {type(units).__name__} ({value})"
+            err_msg = f"Type expected: {Unit}, {type(Unit).__name__}; got: {type(units).__name__} ({units})"
             raise TypeError(err_msg)
-        if units not in self.__dict__.values():
-            raise UnitConversionError(f'{self.__class__.__name__}: unit {units} is not supported')
-        return 0
+        if units not in cls._conversion_factors.keys():
+            raise UnitConversionError(f'{cls.__name__}: unit {units} is not supported')
+        return
 
-    def to_raw(self, value: Number, units: Unit) -> Number:
-        """Converts value with specified prefer_units to raw value
-        :param value: value of the instance
-        :param units: Unit enum type
-        :return: value in specified prefer_units
-        """
-        return self._validate_unit_type(value, units)
+    @classmethod
+    def _get_conversion_factor(cls, unit: Unit) -> float:
+        return cls._conversion_factors[unit]
 
-    def from_raw(self, value: Number, units: Unit) -> Number:
-        """Converts raw value to specified prefer_units
-        :param value: raw value of the unit
-        :param units: Unit enum type
-        :return: value in specified prefer_units
-        """
-        return self._validate_unit_type(value, units)
+    @classmethod
+    def from_raw(cls, raw_value: float, unit: Unit) -> Number:
+        """Converts raw value to a number dimensioned in the specified Units."""
+        cls._validate_unit_type(unit)
+        return raw_value / cls._get_conversion_factor(unit)
+        
+    @classmethod
+    def to_raw(cls, value: Number, units: Unit) -> Number:
+        """Converts value in specified Unit to the Dimension's raw value."""
+        cls._validate_unit_type(units)
+        return value * cls._get_conversion_factor(units)
 
     def convert(self, units: Unit) -> Self:
-        """Returns new unit instance in specified prefer_units
+        """Returns Dimension instance of the value in the specified Units.
         :param units: Unit enum type
-        :return: new unit instance in specified prefer_units
+        :return: new unit instance in specified Units
         """
-        # TODO: creating unnecessary instances?
-        # value = self.get_in(units)
-        # return self.__class__(value, units)
         self._defined_units = units
         return self
 
     def get_in(self, units: Unit) -> Number:
         """
         :param units: Unit enum type
-        :return: value in specified prefer_units
+        :return: value in specified Units
         """
-        return self.from_raw(self._value, units)
+        return self.__class__.from_raw(self._value, units)
 
     @property
     def units(self) -> Unit:
         """
-        :return: defined prefer_units
+        :return: defined Units
         """
         return self._defined_units
 
     @property
     def unit_value(self) -> Number:
-        """Returns float value in defined prefer_units"""
+        """Returns float value in defined Units"""
         return self.get_in(self.units)
 
     @property
@@ -587,80 +572,40 @@ class GenericDimension(Generic[_GenericDimensionType]):
 
 
 class Distance(GenericDimension):
-    """Distance unit"""
+    """Distance unit.  Raw value is inches."""
+
+    _conversion_factors = {
+        Unit.Inch: 1.,
+        Unit.Foot: 12.,
+        Unit.Yard: 36.,
+        Unit.Mile: 63_360.,
+        Unit.NauticalMile: 72_913.3858,
+        Unit.Line: 0.1,
+        Unit.Millimeter: 1. / 25.4,
+        Unit.Centimeter: 10. / 25.4,
+        Unit.Meter: 1_000. / 25.4,
+        Unit.Kilometer: 1_000_000. / 25.4
+    }
 
     @property
     def _inch(self) -> Number:
         """
-        Internal shortcut for Distance() >> Distance.Inch
+        Internal shortcut for `>> Distance.Inch`
 
         Returns:
-            Number: The calculated value in inch.
+            Number: The distance in inches.
         """
         return self._value
 
     @property
     def _feet(self) -> Number:
         """
-        Internal shortcut for Distance() >> Distance.Foot
-
-        This property converts the internal value (assumed to be in inches)
-        to feet by dividing it by 12.
+        Internal shortcut for `>> Distance.Foot`
 
         Returns:
-            Number: The calculated value in feet.
+            Number: The distance in feet.
         """
         return self._value / 12
-
-    def to_raw(self, value: Number, units: Unit):
-        if units == Distance.Inch:
-            return value
-        if units == Distance.Foot:
-            result = value * 12
-        elif units == Distance.Yard:
-            result = value * 36
-        elif units == Distance.Mile:
-            result = value * 63360
-        elif units == Distance.NauticalMile:
-            result = value * 72913.3858
-        elif units == Distance.Line:
-            result = value / 10
-        elif units == Distance.Millimeter:
-            result = value / 25.4
-        elif units == Distance.Centimeter:
-            result = value / 2.54
-        elif units == Distance.Meter:
-            result = value / 25.4 * 1000
-        elif units == Distance.Kilometer:
-            result = value / 25.4 * 1000000
-        else:
-            return super().to_raw(value, units)
-        return result
-
-    def from_raw(self, value: Number, units: Unit):
-        if units == Distance.Inch:
-            return value
-        if units == Distance.Foot:
-            result = value / 12
-        elif units == Distance.Yard:
-            result = value / 36
-        elif units == Distance.Mile:
-            result = value / 63360
-        elif units == Distance.NauticalMile:
-            result = value / 72913.3858
-        elif units == Distance.Line:
-            result = value * 10
-        elif units == Distance.Millimeter:
-            result = value * 25.4
-        elif units == Distance.Centimeter:
-            result = value * 2.54
-        elif units == Distance.Meter:
-            result = value * 25.4 / 1000
-        elif units == Distance.Kilometer:
-            result = value * 25.4 / 1000000
-        else:
-            return super().from_raw(value, units)
-        return result
 
     Inch: Final[Unit] = Unit.Inch
     Foot: Final[Unit] = Unit.Foot
@@ -676,47 +621,15 @@ class Distance(GenericDimension):
 
 
 class Pressure(GenericDimension):
-    """Pressure unit"""
+    """Pressure unit.  Raw value is mmHg."""
 
-    @property
-    def _inHg(self) -> Number:
-        """
-        Internal shortcut for Pressure() >> Distance.InHg
-
-        Returns:
-            Number: The calculated value in InHg.
-        """
-        return self._value / 25.4
-
-    def to_raw(self, value: Number, units: Unit):
-        if units == Pressure.MmHg:
-            return value
-        if units == Pressure.InHg:
-            result = value * 25.4
-        elif units == Pressure.Bar:
-            result = value * 750.061683
-        elif units == Pressure.hPa:
-            result = value * 750.061683 / 1000
-        elif units == Pressure.PSI:
-            result = value * 51.714924102396
-        else:
-            return super().to_raw(value, units)
-        return result
-
-    def from_raw(self, value: Number, units: Unit):
-        if units == Pressure.MmHg:
-            return value
-        if units == Pressure.InHg:
-            result = value / 25.4
-        elif units == Pressure.Bar:
-            result = value / 750.061683
-        elif units == Pressure.hPa:
-            result = value / 750.061683 * 1000
-        elif units == Pressure.PSI:
-            result = value / 51.714924102396
-        else:
-            return super().from_raw(value, units)
-        return result
+    _conversion_factors = {
+        Unit.MmHg: 1.,
+        Unit.InHg: 25.4,
+        Unit.Bar: 750.061683,
+        Unit.hPa: 750.061683 / 1_000,
+        Unit.PSI: 51.714924102396
+    }
 
     MmHg: Final[Unit] = Unit.MmHg
     InHg: Final[Unit] = Unit.InHg
@@ -726,51 +639,26 @@ class Pressure(GenericDimension):
 
 
 class Weight(GenericDimension):
-    """Weight unit"""
+    """Weight unit.  Raw value is grains."""
+
+    _conversion_factors = {
+        Unit.Grain: 1.,
+        Unit.Ounce: 437.5,
+        Unit.Gram: 15.4323584,
+        Unit.Pound: 7_000.,
+        Unit.Kilogram: 15_432.3584,
+        Unit.Newton: 1_573.662597
+    }
 
     @property
     def _grain(self) -> Number:
         """
-        Internal shortcut for Weight() >> Distance.Grain
+        Internal shortcut for `>> Weight.Grain`
 
         Returns:
-            Number: The calculated value in grain.
+            Number: The weight in grains.
         """
         return self._value
-
-    def to_raw(self, value: Number, units: Unit):
-        if units == Weight.Grain:
-            return value
-        if units == Weight.Gram:
-            result = value * 15.4323584
-        elif units == Weight.Kilogram:
-            result = value * 15432.3584
-        elif units == Weight.Newton:
-            result = value * 151339.73750336
-        elif units == Weight.Pound:
-            result = value / 0.000142857143
-        elif units == Weight.Ounce:
-            result = value * 437.5
-        else:
-            return super().to_raw(value, units)
-        return result
-
-    def from_raw(self, value: Number, units: Unit):
-        if units == Weight.Grain:
-            return value
-        if units == Weight.Gram:
-            result = value / 15.4323584
-        elif units == Weight.Kilogram:
-            result = value / 15432.3584
-        elif units == Weight.Newton:
-            result = value / 151339.73750336
-        elif units == Weight.Pound:
-            result = value * 0.000142857143
-        elif units == Weight.Ounce:
-            result = value / 437.5
-        else:
-            return super().from_raw(value, units)
-        return result
 
     Grain: Final[Unit] = Unit.Grain
     Ounce: Final[Unit] = Unit.Ounce
@@ -781,42 +669,53 @@ class Weight(GenericDimension):
 
 
 class Temperature(GenericDimension):
-    """Temperature unit"""
+    """Temperature unit.  Raw value is Fahrenheit."""
+
+    _conversion_factors = {
+        Unit.Fahrenheit: 0.,
+        Unit.Rankin: 0.,
+        Unit.Celsius: 0.,
+        Unit.Kelvin: 0.
+    }
 
     @property
     def _F(self) -> Number:
         """
-        Internal shortcut for Temperature() >> Temperature.Fahrenheit
+        Internal shortcut for `>> Temperature.Fahrenheit`
 
         Returns:
-            Number: The calculated value in Fahrenheit.
+            Number: The temperature in degrees Fahrenheit.
         """
         return self._value
 
-    def to_raw(self, value: Number, units: Unit):
+    @override
+    @classmethod
+    def to_raw(cls, value: Number, units: Unit) -> Number:
         if units == Temperature.Fahrenheit:
             return value
         if units == Temperature.Rankin:
             result = value - 459.67
         elif units == Temperature.Celsius:
-            result = value * 9 / 5 + 32
+            result = value * 9. / 5 + 32
         elif units == Temperature.Kelvin:
-            result = (value - 273.15) * 9 / 5 + 32
+            result = (value - 273.15) * 9. / 5 + 32
         else:
-            return super().to_raw(value, units)
+            raise UnitConversionError(f"Temperature does not support {units}")
         return result
 
-    def from_raw(self, value: Number, units: Unit):
-        if units == Temperature.Fahrenheit:
-            return value
-        if units == Temperature.Rankin:
-            result = value + 459.67
-        elif units == Temperature.Celsius:
-            result = (value - 32) * 5 / 9
-        elif units == Temperature.Kelvin:
-            result = (value - 32) * 5 / 9 + 273.15
+    @override
+    @classmethod
+    def from_raw(cls, raw_value: Number, unit: Unit) -> Number:
+        if unit == Temperature.Fahrenheit:
+            return raw_value
+        if unit == Temperature.Rankin:
+            result = raw_value + 459.67
+        elif unit == Temperature.Celsius:
+            result = (raw_value - 32) * 5. / 9
+        elif unit == Temperature.Kelvin:
+            result = (raw_value - 32) * 5. / 9 + 273.15
         else:
-            return super().from_raw(value, units)
+            raise UnitConversionError(f"Temperature does not support {unit}")
         return result
 
     Fahrenheit: Final[Unit] = Unit.Fahrenheit
@@ -826,65 +725,38 @@ class Temperature(GenericDimension):
 
 
 class Angular(GenericDimension):
-    """Angular unit"""
+    """Angular unit.  Raw value is radians."""
+
+    _conversion_factors = {
+        Unit.Radian: 1.,
+        Unit.Degree: pi / 180,
+        Unit.MOA: pi / (60 * 180),
+        Unit.Mil: pi / 3_200,
+        Unit.MRad: 1. / 1_000,
+        Unit.Thousandth: pi / 3_000,
+        Unit.InchesPer100Yd: 1. / 3_600,
+        Unit.CmPer100m: 1. / 10_000,
+        Unit.OClock: pi / 6,
+    }
 
     @property
     def _rad(self):
         """
-        Internal shortcut for Angular() >> Angular.Radian
+        Internal shortcut for `>> Angular.Radian`
 
         Returns:
-            Number: The calculated value in rad.
+            Number: The value in radians.
         """
         return self._value
 
-    def to_raw(self, value: Number, units: Unit):
-        if units == Angular.Radian:
-            return value
-        if units == Angular.Degree:
-            result = value / 180 * pi
-        elif units == Angular.MOA:
-            result = value / 180 * pi / 60
-        elif units == Angular.Mil:
-            result = value / 3200 * pi
-        elif units == Angular.MRad:
-            result = value / 1000
-        elif units == Angular.Thousandth:
-            result = value / 3000 * pi
-        elif units == Angular.InchesPer100Yd:
-            result = atan(value / 3600)
-        elif units == Angular.CmPer100m:
-            result = atan(value / 10000)
-        elif units == Angular.OClock:
-            result = value / 6 * pi
-        else:
-            return super().to_raw(value, units)
-        if result > 2 * pi:
-            result = result % (2 * pi)
-        return result
-
-    def from_raw(self, value: Number, units: Unit):
-        if units == Angular.Radian:
-            return value
-        if units == Angular.Degree:
-            result = value * 180 / pi
-        elif units == Angular.MOA:
-            result = value * 180 / pi * 60
-        elif units == Angular.Mil:
-            result = value * 3200 / pi
-        elif units == Angular.MRad:
-            result = value * 1000
-        elif units == Angular.Thousandth:
-            result = value * 3000 / pi
-        elif units == Angular.InchesPer100Yd:
-            result = tan(value) * 3600
-        elif units == Angular.CmPer100m:
-            result = tan(value) * 10000
-        elif units == Angular.OClock:
-            result = value * 6 / pi
-        else:
-            return super().from_raw(value, units)
-        return result
+    @override
+    @classmethod
+    def to_raw(cls, value: Number, units: Unit) -> Number:
+        """Avoid going in circles."""
+        radians = super().to_raw(value, units)
+        if radians > 2. * pi:
+            radians = radians % (2. * pi)
+        return radians
 
     Radian: Final[Unit] = Unit.Radian
     Degree: Final[Unit] = Unit.Degree
@@ -898,46 +770,25 @@ class Angular(GenericDimension):
 
 
 class Velocity(GenericDimension):
-    """Velocity unit"""
+    """Velocity unit.  Raw value is meters per second."""
+
+    _conversion_factors = {
+        Unit.MPS: 1.,
+        Unit.KMH: 1. / 3.6,
+        Unit.FPS: 1. / 3.2808399,
+        Unit.MPH: 1. / 2.23693629,
+        Unit.KT: 1. / 1.94384449,
+    }
 
     @property
     def _fps(self) -> Number:
         """
-        Internal shortcut for Velocity() >> Velocity.FPS
-
-        This property converts the internal value (assumed to be in mps)
-        to fps by multiplying it by 3.2808399.
+        Internal shortcut for `>> Velocity.FPS`
 
         Returns:
-            Number: The calculated value in fps.
+            Number: The velocity in fps.
         """
         return self._value * 3.2808399
-
-    def to_raw(self, value: Number, units: Unit):
-        if units == Velocity.MPS:
-            return value
-        if units == Velocity.KMH:
-            return value / 3.6
-        if units == Velocity.FPS:
-            return value / 3.2808399
-        if units == Velocity.MPH:
-            return value / 2.23693629
-        if units == Velocity.KT:
-            return value / 1.94384449
-        return super().to_raw(value, units)
-
-    def from_raw(self, value: Number, units: Unit):
-        if units == Velocity.MPS:
-            return value
-        if units == Velocity.KMH:
-            return value * 3.6
-        if units == Velocity.FPS:
-            return value * 3.2808399
-        if units == Velocity.MPH:
-            return value * 2.23693629
-        if units == Velocity.KT:
-            return value * 1.94384449
-        return super().from_raw(value, units)
 
     MPS: Final[Unit] = Unit.MPS
     KMH: Final[Unit] = Unit.KMH
@@ -947,94 +798,38 @@ class Velocity(GenericDimension):
 
 
 class Energy(GenericDimension):
-    """Energy unit"""
+    """Energy unit.  Raw value is foot-pounds."""
 
-    def to_raw(self, value: Number, units: Unit):
-        if units == Energy.FootPound:
-            return value
-        if units == Energy.Joule:
-            return value * 0.737562149277
-        return super().to_raw(value, units)
-
-    def from_raw(self, value: Number, units: Unit):
-        if units == Energy.FootPound:
-            return value
-        if units == Energy.Joule:
-            return value / 0.737562149277
-        return super().from_raw(value, units)
+    _conversion_factors = {
+        Unit.FootPound: 1.,
+        Unit.Joule: 1.3558179483314,
+    }
 
     FootPound: Final = Unit.FootPound
     Joule: Final = Unit.Joule
 
 
 class Time(GenericDimension):
-    """Time unit"""
+    """Time unit.  Raw value is seconds."""
+
+    _conversion_factors = {
+        Unit.Second: 1.,
+        Unit.Minute: 1. / 60,
+        Unit.Millisecond: 1. / 1_000,
+        Unit.Microsecond: 1. / 1_000_000,
+        Unit.Nanosecond: 1. / 1_000_000_000,
+        Unit.Picosecond: 1. / 1_000_000_000_000,
+    }
 
     @property
     def _seconds(self) -> Number:
         """
-        Internal shortcut for Time() >> Time.Seconds
+        Internal shortcut for `>> Time.Seconds`
 
         Returns:
-            Number: The calculated value in seconds.
+            Number: The value in seconds.
         """
         return self._value
-
-    def to_raw(self, value: Number, units: Unit) -> Number:
-        """
-        Converts a value from the specified units to the raw internal unit (seconds).
-
-        Args:
-            value (Number): The value to convert.
-            units (Unit): The unit of the provided value.
-
-        Returns:
-            Number: The calculated value in seconds.
-        """
-        if units == Time.Second:
-            return value
-        elif units == Time.Minute:
-            result = value * 60
-        elif units == Time.Millisecond:
-            result = value / 1_000
-        elif units == Time.Microsecond:
-            result = value / 1_000_000
-        elif units == Time.Nanosecond:
-            result = value / 1_000_000_000
-        elif units == Time.Picosecond:
-            result = value / 1_000_000_000_000
-        else:
-            # Fallback to parent if unit is not handled here
-            return super().to_raw(value, units)
-        return result
-
-    def from_raw(self, value: Number, units: Unit) -> Number:
-        """
-        Converts a raw internal value (in seconds) to the specified units.
-
-        Args:
-            value (Number): The raw value in seconds.
-            units (Unit): The target unit for conversion.
-
-        Returns:
-            Number: The calculated value in the target unit.
-        """
-        if units == Time.Second:
-            return value
-        elif units == Time.Minute:
-            result = value / 60
-        elif units == Time.Millisecond:
-            result = value * 1_000
-        elif units == Time.Microsecond:
-            result = value * 1_000_000
-        elif units == Time.Nanosecond:
-            result = value * 1_000_000_000
-        elif units == Time.Picosecond:
-            result = value * 1_000_000_000_000
-        else:
-            # Fallback to parent if unit is not handled here
-            return super().from_raw(value, units)
-        return result
 
     # Define the Unit constants for Time
     Minute: Final[Unit] = Unit.Minute
@@ -1047,7 +842,6 @@ class Time(GenericDimension):
 
 class PreferredUnitsMeta(type):
     """Provide representation method for static dataclasses."""
-
     def __repr__(cls):
         return '\n'.join(f'{field} = {getattr(cls, field)!r}'
                          for field in getattr(cls, '__dataclass_fields__'))
@@ -1055,7 +849,7 @@ class PreferredUnitsMeta(type):
 
 @dataclass
 class PreferredUnits(metaclass=PreferredUnitsMeta):  # pylint: disable=too-many-instance-attributes
-    """Default prefer_units for specified measures"""
+    """Default Units for specified measures"""
 
     angular: Unit = Unit.Degree
     distance: Unit = Unit.Yard

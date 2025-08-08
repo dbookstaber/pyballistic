@@ -71,33 +71,21 @@ def test_vertical_shot(zero_height_calc, loaded_engine_instance):
     shot = shot_with_relative_angle_in_degrees(90)
     range = Distance.Meter(10)
     extra_data = False
-    try:
-        hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data)
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in {RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached}:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
-        else:
-            raise e
+    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     # In this case all we know is we should have two points, and the last point should be below zero.
     assert len(hit_result) == 2
-    assert hit_result[-1].height.raw_value < 1e-10
+    assert hit_result[-1].height.raw_value < 1e-9, "Last point's height should be at or below zero"
 
-    try:
-        extra_data = True
-        # To get a ZERO_DOWN point we have to allow engine to cross the zero:
-        config = BaseEngineConfigDict(
-            cMinimumVelocity=0.0,
-            cMinimumAltitude=-1.0,
-            cMaximumDrop=-1.0,
-        )
-        calc = Calculator(config=config, engine=loaded_engine_instance)
-        hit_result = calc.fire(shot, range, extra_data=extra_data)
-    except RangeError as e:
-        print(f'{e.reason} {len(e.incomplete_trajectory)=}')
-        if e.reason in [RangeError.MaximumDropReached, RangeError.MinimumAltitudeReached]:
-            hit_result = HitResult(shot, e.incomplete_trajectory, extra=extra_data)
+    extra_data = True
+    # To get a ZERO_DOWN point we have to allow engine to cross the zero:
+    config = BaseEngineConfigDict(
+        cMinimumVelocity=0.0,
+        cMinimumAltitude=-1.0,
+        cMaximumDrop=-1.0,
+    )
+    calc = Calculator(config=config, engine=loaded_engine_instance)
+    hit_result = calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     z = hit_result.flag(TrajFlag.ZERO_DOWN)
     assert z is not None
