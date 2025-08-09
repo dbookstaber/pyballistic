@@ -520,6 +520,12 @@ class GenericDimension(Generic[_GenericDimensionType]):
         return cls._conversion_factors[unit]
 
     @classmethod
+    def new_from_raw(cls, raw_value: float, to_units: Unit) -> Self:
+        """Create a new instance from a raw value (in base units), converting to the specified units."""
+        value_in_units = raw_value / cls._get_conversion_factor(to_units)
+        return cls(value_in_units, to_units)
+
+    @classmethod
     def from_raw(cls, raw_value: float, unit: Unit) -> Number:
         """Converts raw value to a number dimensioned in the specified Units."""
         cls._validate_unit_type(unit)

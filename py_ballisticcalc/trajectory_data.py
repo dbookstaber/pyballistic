@@ -759,7 +759,7 @@ class HitResult:
                     interpolated_fields[field_name] = value
                 else:  # value is a float, assume it's in the same unit as the original data
                     if isinstance(p0_field, GenericDimension):
-                        interpolated_fields[field_name] = p0_field.from_raw(float(value), p0_field.units)
+                        interpolated_fields[field_name] = type(p0_field).new_from_raw(float(value), p0_field.units)
                     else:
                         interpolated_fields[field_name] = float(value)
                 continue
@@ -772,7 +772,7 @@ class HitResult:
             if isinstance(y0_val, GenericDimension):
                 y0, y1, y2 = y0_val.raw_value, y1_val.raw_value, y2_val.raw_value
                 interpolated_raw = _lagrange_quadratic(x_val, x0, y0, x1, y1, x2, y2)
-                interpolated_fields[field_name] = y0_val.from_raw(interpolated_raw, y0_val.units)
+                interpolated_fields[field_name] = type(y0_val).new_from_raw(interpolated_raw, y0_val.units)
             elif isinstance(y0_val, float):
                 interpolated_fields[field_name] = _lagrange_quadratic(x_val, x0, y0_val, x1, y1_val, x2, y2_val)
             else:
