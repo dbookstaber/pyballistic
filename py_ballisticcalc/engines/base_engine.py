@@ -792,6 +792,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             HitResult: Object for describing the trajectory.
         """
         props = self._init_trajectory(shot_info)
+        props.filter_flags = filter_flags
         range_limit_ft = max_range >> Distance.Foot
         if dist_step is None:
             range_step_ft = range_limit_ft

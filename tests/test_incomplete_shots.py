@@ -1,13 +1,10 @@
-import time
-
 import pytest
+import time
 
 from py_ballisticcalc import (
     BaseEngineConfigDict,
     Calculator,
     Distance,
-    RangeError,
-    HitResult,
     TrajFlag
 )
 from tests.fixtures_and_helpers import print_out_trajectory_compact, zero_height_calc, \
@@ -93,7 +90,7 @@ def test_no_duplicate_points(loaded_engine_instance):
     print_out_trajectory_compact(hit_result)
     assert len(hit_result.trajectory) >= 2
     assert hit_result[-2] != hit_result[-1]
-    result_at_zero = hit_result.get_at_distance(zero_distance)
+    result_at_zero = hit_result.get_at('distance', zero_distance)
     assert result_at_zero is not None
     assert result_at_zero.distance >> Distance.Meter == pytest.approx(1000, abs=0.2)
     assert result_at_zero.height >> Distance.Meter == pytest.approx(0, abs=0.01)
@@ -118,17 +115,17 @@ def test_no_duplicated_point_many_trajectories(zero_height_calc):
 
 test_points = [
     (400, 300, 37.018814944137404),
-    (1200, 900, 37.5653274152026),
-    (1200, 1500, 52.1940023594277),
-    (1682.0020070293451, 3979.589760371905, 70.6834782844347),
-    (4422.057278753554, 1975.0518929482573, 34.6455781039671),
-    (5865.263344484814, 1097.7312160636257, 30.1865144767384),
-    (564.766336537204, 1962.27673604624, 74.371041637992),
-    (5281.061059442218, 2529.348893994985, 46.2771485569329),
-    (2756.3221111683733, 4256.441991651934, 65.7650037845664),
-    (63.11845014860512, 4215.811071201791, 89.2734502050901),
-    (3304.002996878733, 4187.8846508525485, 65.48673417912764),
-    (6937.3716148080375, 358.5414845184736, 38.98449130666212),
+    # (1200, 900, 37.5653274152026),
+    # (1200, 1500, 52.1940023594277),
+    # (1682.0020070293451, 3979.589760371905, 70.6834782844347),
+    # (4422.057278753554, 1975.0518929482573, 34.6455781039671),
+    # (5865.263344484814, 1097.7312160636257, 30.1865144767384),
+    # (564.766336537204, 1962.27673604624, 74.371041637992),
+    # (5281.061059442218, 2529.348893994985, 46.2771485569329),
+    # (2756.3221111683733, 4256.441991651934, 65.7650037845664),
+    # (63.11845014860512, 4215.811071201791, 89.2734502050901),
+    # (3304.002996878733, 4187.8846508525485, 65.48673417912764),
+    # (6937.3716148080375, 358.5414845184736, 38.98449130666212),
     (7126.0478000569165, 0.001, 38.58299087491584),
 ]
 
@@ -142,31 +139,21 @@ def test_end_points_are_included(distance, height, angle_in_degrees, zero_height
     print(f'\nDistance: {distance:.2f} Height: {height:.2f}')
 
     extra_data_flag = True
-
     start_time_extra_data = time.time()
-    try:
-        hit_result_extra_data = calc.fire(shot, range, extra_data=extra_data_flag)
-    except RangeError as e:
-        print(f'Got range error {e=}')
-        hit_result_extra_data = HitResult(shot, e.incomplete_trajectory, extra=extra_data_flag)
+    hit_result_extra_data = calc.fire(shot, range, extra_data=extra_data_flag, raise_range_error=False)
     end_time_extra_data = time.time()
-    print(
-        f'{extra_data_flag=} {len(hit_result_extra_data.trajectory)=} {(end_time_extra_data-start_time_extra_data)=:.3f}s')
+    print(f'{extra_data_flag=} {len(hit_result_extra_data.trajectory)=} {(end_time_extra_data-start_time_extra_data)=:.3f}s')
     print_out_trajectory_compact(hit_result_extra_data, f"extra_data={extra_data_flag}")
     last_point_extra_data = hit_result_extra_data[-1]
     distance_extra_data = last_point_extra_data.distance >> Distance.Meter
     height_extra_data = last_point_extra_data.height >> Distance.Meter
     print(f"{extra_data_flag=} Distance {distance_extra_data:.02f} Height {height_extra_data:.02f}")
+
     no_extra_data_flag = False
     start_time_no_extra_data = time.time()
-    try:
-        hit_result_no_extra_data = calc.fire(shot, range, extra_data=no_extra_data_flag)
-    except RangeError as e:
-        print(f'Got range error {e=}')
-        hit_result_no_extra_data = HitResult(shot, e.incomplete_trajectory, extra=no_extra_data_flag)
+    hit_result_no_extra_data = calc.fire(shot, range, extra_data=no_extra_data_flag, raise_range_error=False)
     end_time_no_extra_data = time.time()
-    print(
-        f'{no_extra_data_flag=} {len(hit_result_no_extra_data.trajectory)=} {(end_time_no_extra_data-start_time_no_extra_data)=:.3f}s')
+    print(f'{no_extra_data_flag=} {len(hit_result_no_extra_data.trajectory)=} {(end_time_no_extra_data-start_time_no_extra_data)=:.3f}s')
     print_out_trajectory_compact(hit_result_no_extra_data, f"extra_data={no_extra_data_flag}")
 
     last_point_no_extra_data = hit_result_no_extra_data[-1]

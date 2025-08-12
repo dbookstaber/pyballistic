@@ -4,7 +4,7 @@ import typing
 import warnings
 from dataclasses import dataclass, field
 from deprecated import deprecated
-from typing_extensions import Final, List, NamedTuple, Optional, Tuple, Union
+from typing_extensions import Final, List, Literal, NamedTuple, Optional, Tuple, Union
 
 from py_ballisticcalc.conditions import Shot, Wind
 from py_ballisticcalc.drag_model import DragDataPoint
@@ -208,6 +208,16 @@ class TrajectoryData(NamedTuple):
             self.ogw >> PreferredUnits.ogw,
             self.flag
         )
+TRAJECTORY_DATA_ATTRIBUTES = Literal[
+    'time', 'distance', 'velocity', 'mach', 'height', 'slant_height', 'drop_adj',
+    'windage', 'windage_adj', 'slant_distance', 'angle', 'density_ratio', 'drag',
+    'energy', 'ogw', 'flag', 'x', 'y', 'z'
+]
+TRAJECTORY_DATA_SYNONYMS: dict[TRAJECTORY_DATA_ATTRIBUTES, TRAJECTORY_DATA_ATTRIBUTES] = {
+    'x': 'distance',
+    'y': 'height',
+    'z': 'windage',
+}
 
 
 @dataclass
@@ -215,9 +225,8 @@ class ShotProps:
     """
     Properties for a Shot used in trajectory calculations, converted to internal units.
 
-    TODO: The Shot object should either be a copy or immutable so that subsequent changes to its properties
+    TODO: The Shot member object should either be a copy or immutable so that subsequent changes to its properties
             do not invalidate the calculations and data associated with this ShotProps instance.
-    TODO: Add filter_flags that were passed to calculator for this shot.
     """
     shot: Shot
     bc: float  # Ballistic coefficient
@@ -238,6 +247,7 @@ class ShotProps:
     calc_step: float  # Calculation step size
     muzzle_velocity_fps: float  # Muzzle velocity in feet per second
     stability_coefficient: float = field(init=False)
+    filter_flags: Union[TrajFlag, int] = field(init=False)
 
     def __post_init__(self):
         self.stability_coefficient = self._calc_stability_coefficient()
@@ -245,6 +255,10 @@ class ShotProps:
     @property
     def winds(self) -> Tuple[Wind, ...]:
         return self.shot.winds
+    
+    @property
+    def look_angle(self) -> Angular:
+        return Angular.Radian(self.look_angle_rad)
 
     def drag_by_mach(self, mach: float) -> float:
         """
@@ -602,11 +616,11 @@ class DangerSpace(NamedTuple):
     look_angle: Angular
 
     def __str__(self) -> str:
-        return f'Danger space at {self.at_range.distance << PreferredUnits.distance} ' \
+        return f'Danger space at {self.at_range.slant_distance << PreferredUnits.distance} ' \
             + f'for {self.target_height << PreferredUnits.drop} tall target ' \
             + (f'at {self.look_angle << Angular.Degree} look-angle ' if self.look_angle != 0 else '') \
-            + f'ranges from {self.begin.distance << PreferredUnits.distance} ' \
-            + f'to {self.end.distance << PreferredUnits.distance}'
+            + f'ranges from {self.begin.slant_distance << PreferredUnits.distance} ' \
+            + f'to {self.end.slant_distance << PreferredUnits.distance}'
 
     # pylint: disable=import-outside-toplevel
     def overlay(self, ax: 'Axes', label: Optional[str] = None):  # type: ignore
@@ -685,7 +699,7 @@ class HitResult:
     def flag(self, flag: Union[TrajFlag, int]) -> Optional[TrajectoryData]:
         """
         Returns:
-            TrajectoryData: Trajectory row with the specified flag.
+            TrajectoryData: First TrajectoryData row with the specified flag.
 
         Raises:
             AttributeError: If extra_data was not requested.
@@ -696,7 +710,9 @@ class HitResult:
                 return row
         return None
 
-    def get_at(self, key_attribute: str, value: Union[float, GenericDimension]) -> 'TrajectoryData':
+    def get_at(self, key_attribute: TRAJECTORY_DATA_ATTRIBUTES,
+                     value: Union[float, GenericDimension],
+                     start_from_time: float=0.0) -> 'TrajectoryData':
         """
         Interpolates the trajectory to find the data at a specific point,
             preserving the units of the original trajectory data.
@@ -704,22 +720,35 @@ class HitResult:
         Args:
             key_attribute (str): The name of the TrajectoryData attribute to key on (e.g., 'time', 'distance').
             value (Union[float, GenericDimension]): The value of the key attribute to find. If a float is provided
-                                                 for a dimensioned attribute, it's assumed to be in the same
-                                                 units as the existing trajectory data.
+                                                    for a dimensioned attribute, it's assumed to be a .raw_value.
+            start_from_time (float): The time to center the search from (default is 0.0).  If the target value is
+                at a local extremum then the search will only go forward in time.
 
         Returns:
             TrajectoryData: An interpolated trajectory data point.
+
+        Raises:
+            AttributeError: If TrajectoryData doesn't have the specified attribute.
+            KeyError: If the key_attribute is 'flag'.
+            ValueError: If interpolation is required and len(self.trajectory) < 3.
+            ArithmeticError: If trajectory doesn't reach the requested value.
+
+        Notes:
+            * Not all attributes are monotonic.  Height typically goes up and then down.
+                Velocity typically goes down, but for lofted trajectories can begin to increase.
+                Windage can wander back and forth in complex winds.  We even have (see ExtremeExamples.ipynb)
+                backward-bending scenarios in which distance reverses!
+            * The only guarantee is that time is strictly increasing.
         """
+        key_attribute = TRAJECTORY_DATA_SYNONYMS.get(key_attribute, key_attribute)  # Resolve synonyms
         if not hasattr(TrajectoryData, key_attribute):
             raise AttributeError(f"TrajectoryData has no attribute '{key_attribute}'")
         if key_attribute == 'flag':
-            raise ValueError("Cannot interpolate based on 'flag' attribute")
+            raise KeyError("Cannot interpolate based on 'flag' attribute")
 
         traj = self.trajectory
         n = len(traj)
-        if n < 3:
-            raise ValueError("Interpolation requires at least 3 trajectory points.")
-
+        epsilon = 1e-9  # Very small tolerance for floating point comparison
         key_value = value.raw_value if isinstance(value, GenericDimension) else value
 
         # Helper to get the raw value of the key attribute from a TrajectoryData point
@@ -727,20 +756,64 @@ class HitResult:
             val = getattr(td, key_attribute)
             return val.raw_value if hasattr(val, 'raw_value') else val
 
-        # Find the index of the point just after the key_value.
-        # This assumes the key_attribute is monotonically increasing.
-        idx = next((i for i, td in enumerate(traj) if get_key_val(td) >= key_value), -1)
+        if n < 3:  # We won't interpolate on less than 3 points, but check for an exact match in the existing rows.
+            if abs(get_key_val(traj[0]) - key_value) < epsilon:
+                return traj[0]
+            if n > 1 and abs(get_key_val(traj[1]) - key_value) < epsilon:
+                return traj[1]
+            raise ValueError("Interpolation requires at least 3 TrajectoryData points.")
 
-        if idx == -1:
+        # Find the starting index based on start_from_time
+        start_idx = 0
+        if start_from_time > 0:
+            start_idx = next((i for i, td in enumerate(traj) if td.time >= start_from_time), 0)
+        curr_val = get_key_val(traj[start_idx])
+        if abs(curr_val - key_value) < epsilon:  # Check for exact match
+            return traj[start_idx]
+        # Determine search direction from the starting point
+        search_forward = True  # Default to forward search
+        if start_idx == n - 1:  # We're at the last point, search backwards            
+            search_forward = False
+        if start_idx > 0 and start_idx < n - 1:
+            # We're in the middle of the trajectory, determine local direction towards key_value
+            next_val = get_key_val(traj[start_idx + 1])
+            if (next_val > curr_val and key_value > curr_val) or (next_val < curr_val and key_value < curr_val):
+                search_forward = True
+            else:
+                search_forward = False
+
+        # Search for the target value in the determined direction
+        target_idx = -1
+        if search_forward:  # Search forward from start_idx            
+            for i in range(start_idx, n - 1):
+                curr_val = get_key_val(traj[i])
+                next_val = get_key_val(traj[i + 1])
+                # Check if key_value is between curr_val and next_val
+                if ((curr_val < key_value <= next_val) or (next_val <= key_value < curr_val)):
+                    target_idx = i + 1
+                    break
+        if not search_forward or target_idx == -1:  # Search backward from start_idx
+            for i in range(start_idx, 0, -1):
+                curr_val = get_key_val(traj[i])
+                prev_val = get_key_val(traj[i - 1])
+                # Check if key_value is between prev_val and curr_val
+                if ((prev_val <= key_value < curr_val) or (curr_val < key_value <= prev_val)):
+                    target_idx = i
+                    break
+
+        # Check if we found a valid index
+        if target_idx == -1:
             raise ArithmeticError(f"Trajectory does not reach {key_attribute} = {value}")
-        if idx == 0:  # Before the first point
-            idx = 1
-
+        # Check for exact match here
+        if abs(get_key_val(traj[target_idx]) - key_value) < epsilon:
+            return traj[target_idx]
+        if target_idx == 0:  # Step forward from first point so we can interpolate
+            target_idx = 1
         # Choose three bracketing points (p0, p1, p2)
-        if idx >= n - 1:  # At or after the last point
+        if target_idx >= n - 1:  # At or after the last point
             p0, p1, p2 = traj[n - 3], traj[n - 2], traj[n - 1]
         else:
-            p0, p1, p2 = traj[idx - 1], traj[idx], traj[idx + 1]
+            p0, p1, p2 = traj[target_idx - 1], traj[target_idx], traj[target_idx + 1]
 
         # The independent variable for interpolation (x-axis)
         x_val = key_value
@@ -833,25 +906,21 @@ class HitResult:
             )
         return self.trajectory[idx]
 
-    # TODO: Refactor this method to use get_at() for consistency
     def danger_space(self,
                      at_range: Union[float, Distance],
                      target_height: Union[float, Distance],
-                     look_angle: Optional[Union[float, Angular]] = None
                      ) -> DangerSpace:
         """
-        Calculates the danger space for a given range and target height.
-
-        Assumes that the trajectory hits the center of a target at any distance.
-        Determines how much ranging error can be tolerated if the critical region
-        of the target has height *h*. Finds how far forward and backward along the
-        line of sight a target can move such that the trajectory is still within *h*/2
-        of the original drop.
+        Calculates the danger space for a given range and target height:
+            Assumes that the trajectory hits the center of a target at any distance.
+            Determines how much ranging error can be tolerated if the critical region
+            of the target has target_height *h*. Finds how far forward and backward along the
+            line of sight a target can move such that the trajectory is still within *h*/2
+            of the original drop at_range.
 
         Args:
             at_range (Union[float, Distance]): Danger space is calculated for a target centered at this sight distance.
             target_height (Union[float, Distance]): Target height (*h*) determines danger space.
-            look_angle (Optional[Union[float, Angular]], optional): Ranging errors occur along the look angle to the target.
 
         Returns:
             DangerSpace: The calculated danger space.
@@ -860,63 +929,28 @@ class HitResult:
             AttributeError: If extra_data wasn't requested.
             ArithmeticError: If trajectory doesn't reach requested distance.
         """
-        self.__check_extra__()
-
-        at_range = PreferredUnits.distance(at_range)
-        target_height = PreferredUnits.distance(target_height)
+        target_at_range = PreferredUnits.distance(at_range)
+        target_height = PreferredUnits.target_height(target_height)
         target_height_half = target_height.raw_value / 2.0
 
-        _look_angle: Angular
-        if look_angle is None:
-            _look_angle = Angular.Radian(self.shot.look_angle_rad)
-        else:
-            _look_angle = PreferredUnits.angular(look_angle)
+        target_row = self.get_at('slant_distance', target_at_range)
+        is_climbing = target_row.angle.raw_value - self.shot.look_angle.raw_value > 0
+        slant_height_begin = target_row.slant_height.raw_value + (-1 if is_climbing else 1) * target_height_half
+        slant_height_end = target_row.slant_height.raw_value - (-1 if is_climbing else 1) * target_height_half
+        try:
+            begin_row = self.get_at('slant_height', slant_height_begin, target_row.time)
+        except ArithmeticError:
+            begin_row = self.trajectory[0]
+        try:
+            end_row = self.get_at('slant_height', slant_height_end, target_row.time)
+        except ArithmeticError:
+            end_row = self.trajectory[-1]
 
-        # Get index of first trajectory point with distance >= at_range
-        if (index := self.index_at_distance(at_range)) < 0:
-            raise ArithmeticError(
-                f"Calculated trajectory doesn't reach requested distance {at_range}"
-            )
-
-        def find_begin_danger(row_num: int) -> TrajectoryData:
-            """
-            Beginning of danger space is last .distance' < .distance where
-                (.drop' - target_center) >= target_height/2
-
-            Args:
-                row_num (int): Index of the trajectory point for which we are calculating danger space.
-
-            Returns:
-                TrajectoryData: Distance marking beginning of danger space.
-            """
-            center_row = self.trajectory[row_num]
-            for prime_row in reversed(self.trajectory[:row_num]):
-                if (prime_row.slant_height.raw_value - center_row.slant_height.raw_value) >= target_height_half:
-                    return prime_row
-            return self.trajectory[0]
-
-        def find_end_danger(row_num: int) -> TrajectoryData:
-            """
-            End of danger space is first .distance' > .distance where
-                (target_center - .drop') >= target_height/2
-
-            Args:
-                row_num (int): Index of the trajectory point for which we are calculating danger space.
-
-            Returns:
-                TrajectoryData: Distance marking end of danger space.
-            """
-            center_row = self.trajectory[row_num]
-            for prime_row in self.trajectory[row_num + 1:]:
-                if (center_row.slant_height.raw_value - prime_row.slant_height.raw_value) >= target_height_half:
-                    return prime_row
-            return self.trajectory[-1]
-
-        return DangerSpace(self.trajectory[index],
+        return DangerSpace(target_row,
                            target_height,
-                           find_begin_danger(index),
-                           find_end_danger(index),
-                           _look_angle)
+                           begin_row,
+                           end_row,
+                           self.shot.look_angle)
 
     def dataframe(self, formatted: bool = False) -> 'DataFrame':  # type: ignore
         """

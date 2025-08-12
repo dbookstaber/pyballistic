@@ -19,10 +19,7 @@ __all__ = ('RK4IntegrationEngine',)
 
 class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
     """Runge-Kutta 4th order integration engine for ballistic calculations."""
-    # TODO: This can be increased as soon as TrajectoryDataFilter can interpolate for more than
-    #   one point between .should_record() calls.  At DEFAULT_TIME_STEP=0.005 it doesn't generate
-    #   a RANGE record for every yard and this fails test_danger_space.py::test_danger_space.
-    DEFAULT_TIME_STEP = 0.0015
+    DEFAULT_TIME_STEP = 0.0025
 
     def __init__(self, config: BaseEngineConfigDict):
         super().__init__(config)

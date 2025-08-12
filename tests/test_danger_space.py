@@ -17,27 +17,21 @@ class TestDangerSpace:
         shot = Shot(weapon=Weapon(Distance.Inch(1)), ammo=ammo, winds=current_winds)
         calc = Calculator(engine=loaded_engine_instance)
         calc.set_weapon_zero(shot, Distance.Foot(300))
-        self.shot_result = calc.fire(shot, trajectory_range=Distance.Yard(1000), trajectory_step=Distance.Yard(1),
-                                     extra_data=True)
+        self.shot_result = calc.fire(shot, trajectory_range=Distance.Yard(1000),
+                                     trajectory_step=Distance.Yard(10), extra_data=True)
 
     def test_danger_space(self):
-        danger_space = self.shot_result.danger_space(
-            Distance.Yard(500), Distance.Meter(1.5), self.look_angle
-        )
+        danger_space = self.shot_result.danger_space(Distance.Yard(500), Distance.Meter(1.5))
+        assert pytest.approx(danger_space.begin.distance >> Distance.Yard, abs=0.5) == 388.7
+        assert pytest.approx(danger_space.end.distance >> Distance.Yard, abs=0.5) == 580.8
 
-        assert pytest.approx(round(danger_space.begin.distance >> Distance.Yard, Distance.Yard.accuracy),
-                             abs=0.5) == 388.0
-        assert pytest.approx(round(danger_space.end.distance >> Distance.Yard, Distance.Yard.accuracy),
-                             abs=0.5) == 581.0
+        danger_space = self.shot_result.danger_space(Distance.Yard(500), Distance.Inch(10))
+        assert pytest.approx(danger_space.begin.distance >> Distance.Yard, abs=0.5) == 484.0
+        assert pytest.approx(danger_space.end.distance >> Distance.Yard, abs=0.5) == 515.2
 
-        danger_space = self.shot_result.danger_space(
-            Distance.Yard(500), Distance.Inch(10), self.look_angle
-        )
-
-        assert pytest.approx(round(danger_space.begin.distance >> Distance.Yard, Distance.Yard.accuracy),
-                             abs=0.5) == 483.0
-        assert pytest.approx(round(danger_space.end.distance >> Distance.Yard, Distance.Yard.accuracy),
-                             abs=0.5) == 516.0
+        danger_space = self.shot_result.danger_space(Distance.Yard(200), Distance.Inch(10))
+        assert pytest.approx(danger_space.begin.distance >> Distance.Yard, abs=0.5) == 0.0
+        assert pytest.approx(danger_space.end.distance >> Distance.Yard, abs=0.5) == 254.7
 
     def test_extra_data(self):
         """With extra_data=True, the trajectory should include points for ZERO and MACH crossings."""
