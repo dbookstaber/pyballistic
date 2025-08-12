@@ -244,9 +244,9 @@ class ShotProps:
     cant_cosine: float  # Cosine of the cant angle
     cant_sine: float  # Sine of the cant angle
     alt0_ft: float  # Initial altitude in feet
-    calc_step: float  # Calculation step size
     muzzle_velocity_fps: float  # Muzzle velocity in feet per second
     stability_coefficient: float = field(init=False)
+    calc_step: float = field(init=False)  # Calculation step size
     filter_flags: Union[TrajFlag, int] = field(init=False)
 
     def __post_init__(self):
@@ -260,6 +260,28 @@ class ShotProps:
     def look_angle(self) -> Angular:
         return Angular.Radian(self.look_angle_rad)
 
+    @classmethod
+    def from_shot(cls, shot: Shot) -> 'ShotProps':
+        """Initializes a ShotProps instance from a Shot instance."""
+        return cls(
+            shot=shot,
+            bc=shot.ammo.dm.BC,
+            curve=calculate_curve(shot.ammo.dm.drag_table),
+            mach_list=_get_only_mach_data(shot.ammo.dm.drag_table),
+            look_angle_rad=shot.look_angle >> Angular.Radian,
+            twist_inch=shot.weapon.twist >> Distance.Inch,
+            length_inch=shot.ammo.dm.length >> Distance.Inch,
+            diameter_inch=shot.ammo.dm.diameter >> Distance.Inch,
+            weight_grains=shot.ammo.dm.weight >> Weight.Grain,
+            barrel_elevation_rad=shot.barrel_elevation >> Angular.Radian,
+            barrel_azimuth_rad=shot.barrel_azimuth >> Angular.Radian,
+            sight_height_ft=shot.weapon.sight_height >> Distance.Foot,
+            cant_cosine=math.cos(shot.cant_angle >> Angular.Radian),
+            cant_sine=math.sin(shot.cant_angle >> Angular.Radian),
+            alt0_ft=shot.atmo.altitude >> Distance.Foot,
+            muzzle_velocity_fps=shot.ammo.get_velocity_for_temp(shot.atmo.powder_temp) >> Velocity.FPS,
+        )
+    
     def drag_by_mach(self, mach: float) -> float:
         """
         Calculates a standard drag factor (SDF) for the given Mach number.  Where:
@@ -535,6 +557,18 @@ def calculate_curve(data_points: List[DragDataPoint]) -> List[CurvePoint]:
     return curve
 
 
+def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
+    """
+    Extracts Mach values from a list of DragDataPoint objects.
+
+    Args:
+        data (List[DragDataPoint]): A list of DragDataPoint objects.
+
+    Returns:
+        List[float]: A list containing only the Mach values from the input data.
+    """
+    return [dp.Mach for dp in data]
+
 # # use ._get_only_mach_data with ._calculate_by_curve_and_mach_list because it's faster
 # def calculate_by_curve(data: List[DragDataPoint], curve: List[CurvePoint], mach: float) -> float:
 #     """
@@ -660,7 +694,7 @@ class HitResult:
         extra (bool): Whether special points (TrajFlag > 0) were requested.
         error (Optional[RangeError]): RangeError, if any.
     """
-    shot: ShotProps
+    props: ShotProps
     trajectory: list[TrajectoryData] = field(repr=False)
     extra: bool = False
     error: Optional[RangeError] = None
@@ -681,6 +715,11 @@ class HitResult:
                 f"Use Calculator.fire(..., extra_data=True)"
             )
 
+    def __check_flag__(self, flag: Union[TrajFlag, int]):
+        if not self.props.filter_flags & flag:
+            raise AttributeError(f"{TrajFlag.name(flag)} was not requested in trajectory. "
+                                  f"Use Calculator.fire(..., extra_data=True)")
+
     def zeros(self) -> list[TrajectoryData]:
         """
         Returns:
@@ -690,7 +729,7 @@ class HitResult:
             AttributeError: If extra_data was not requested.
             ArithmeticError: If zero crossing points are not found.
         """
-        self.__check_extra__()
+        self.__check_flag__(TrajFlag.ZERO)
         data = [row for row in self.trajectory if row.flag & TrajFlag.ZERO]
         if len(data) < 1:
             raise ArithmeticError("Can't find zero crossing points")
@@ -702,9 +741,9 @@ class HitResult:
             TrajectoryData: First TrajectoryData row with the specified flag.
 
         Raises:
-            AttributeError: If extra_data was not requested.
+            AttributeError: If flag was not requested.
         """
-        self.__check_extra__()
+        self.__check_flag__(flag)
         for row in self.trajectory:
             if row.flag & flag:
                 return row
@@ -934,7 +973,7 @@ class HitResult:
         target_height_half = target_height.raw_value / 2.0
 
         target_row = self.get_at('slant_distance', target_at_range)
-        is_climbing = target_row.angle.raw_value - self.shot.look_angle.raw_value > 0
+        is_climbing = target_row.angle.raw_value - self.props.look_angle.raw_value > 0
         slant_height_begin = target_row.slant_height.raw_value + (-1 if is_climbing else 1) * target_height_half
         slant_height_end = target_row.slant_height.raw_value - (-1 if is_climbing else 1) * target_height_half
         try:
@@ -950,7 +989,7 @@ class HitResult:
                            target_height,
                            begin_row,
                            end_row,
-                           self.shot.look_angle)
+                           self.props.look_angle)
 
     def dataframe(self, formatted: bool = False) -> 'DataFrame':  # type: ignore
         """

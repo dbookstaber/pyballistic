@@ -34,7 +34,7 @@ from py_ballisticcalc_exts.v3d cimport (
 from py_ballisticcalc.unit import Angular, Unit, Velocity, Distance, Energy, Weight
 from py_ballisticcalc.exceptions import ZeroFindingError, RangeError, OutOfRangeError, SolverRuntimeError
 from py_ballisticcalc.engines.base_engine import create_base_engine_config
-from py_ballisticcalc.trajectory_data import HitResult, TrajFlag
+from py_ballisticcalc.trajectory_data import HitResult, TrajFlag, ShotProps
 
 
 __all__ = (
@@ -265,7 +265,9 @@ cdef class CythonizedBaseIntegrationEngine:
         self._init_trajectory(shot_info)
         object = self._integrate(range_limit_ft, range_step_ft, time_step, filter_flags, dense_output)
         self._free_trajectory()
-        return HitResult(shot_info, object[0], filter_flags > 0, object[1])
+        props = ShotProps.from_shot(shot_info)
+        props.filter_flags = filter_flags
+        return HitResult(props, object[0], filter_flags > 0, object[1])
 
     cdef void _free_trajectory(CythonizedBaseIntegrationEngine self):
         if self._wind_sock is not NULL:

@@ -8,15 +8,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
 
-from typing_extensions import List, Optional, NamedTuple, Union, Tuple, Dict, TypedDict, TypeVar
+from typing_extensions import Optional, NamedTuple, Union, Tuple, Dict, TypedDict, TypeVar
 
 from py_ballisticcalc.conditions import Shot, Wind
-from py_ballisticcalc.drag_model import DragDataPoint
 from py_ballisticcalc.exceptions import ZeroFindingError, OutOfRangeError, SolverRuntimeError
 from py_ballisticcalc.generics.engine import EngineProtocol
 from py_ballisticcalc.logger import logger
 from py_ballisticcalc.trajectory_data import *
-from py_ballisticcalc.unit import Distance, Angular, Velocity, Weight
+from py_ballisticcalc.unit import Distance, Angular
 from py_ballisticcalc.vector import Vector
 
 __all__ = (
@@ -317,32 +316,16 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         """Get step size for integration."""
         return self._config.cStepMultiplier
 
-    def _init_trajectory(self, shot_info: Shot) -> ShotProps:
+    def _init_trajectory(self, shot: Shot) -> ShotProps:
         """
         Converts Shot properties into floats dimensioned in internal units.
 
         Args:
             shot_info (Shot): Information about the shot.
         """
-        return ShotProps(
-            shot=shot_info,
-            bc=shot_info.ammo.dm.BC,
-            curve=calculate_curve(shot_info.ammo.dm.drag_table),
-            mach_list=_get_only_mach_data(shot_info.ammo.dm.drag_table),
-            look_angle_rad=shot_info.look_angle >> Angular.Radian,
-            twist_inch=shot_info.weapon.twist >> Distance.Inch,
-            length_inch=shot_info.ammo.dm.length >> Distance.Inch,
-            diameter_inch=shot_info.ammo.dm.diameter >> Distance.Inch,
-            weight_grains=shot_info.ammo.dm.weight >> Weight.Grain,
-            barrel_elevation_rad=shot_info.barrel_elevation >> Angular.Radian,
-            barrel_azimuth_rad=shot_info.barrel_azimuth >> Angular.Radian,
-            sight_height_ft=shot_info.weapon.sight_height >> Distance.Foot,
-            cant_cosine=math.cos(shot_info.cant_angle >> Angular.Radian),
-            cant_sine=math.sin(shot_info.cant_angle >> Angular.Radian),
-            alt0_ft=shot_info.atmo.altitude >> Distance.Foot,
-            calc_step=self.get_calc_step(),
-            muzzle_velocity_fps=shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp) >> Velocity.FPS,
-        )
+        props = ShotProps.from_shot(shot)
+        props.calc_step = self.get_calc_step()
+        return props
 
     def find_max_range(self, shot_info: Shot, angle_bracket_deg: Tuple[float, float] = (0, 90)) -> Tuple[
         Distance, Angular]:
@@ -822,16 +805,3 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             HitResult: Object describing the trajectory.
         """
         raise NotImplementedError
-
-
-def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
-    """
-    Extracts Mach values from a list of DragDataPoint objects.
-
-    Args:
-        data (List[DragDataPoint]): A list of DragDataPoint objects.
-
-    Returns:
-        List[float]: A list containing only the Mach values from the input data.
-    """
-    return [dp.Mach for dp in data]
