@@ -100,7 +100,7 @@ cdef BaseTrajData TrajDataFilter_t_should_record(TrajDataFilter_t * tdf, const V
         _check_mach_crossing(tdf, mag(velocity_ptr), mach)
     if tdf.filter & TrajFlag_t.APEX:
         _check_apex(tdf, velocity_ptr)
-    if (tdf.current_flag & tdf.filter) != 0 and data is None:
+    if ((tdf.current_flag & tdf.filter) != 0 and data is None) or time==0:
         data = BaseTrajData(time=time, position=position_ptr[0],
                             velocity=velocity_ptr[0], mach=mach)
     tdf.previous_time = time

@@ -8,6 +8,7 @@ to perform trajectory calculations, access drag model data, and determine
 zeroing angles for firearms.
 """
 
+from abc import abstractmethod
 from typing import TypeVar, Optional, Union
 
 from typing_extensions import Protocol, runtime_checkable
@@ -37,6 +38,7 @@ class EngineProtocol(Protocol[ConfigT]):
             _config (Config): The configuration object.
         """
 
+    @abstractmethod
     def integrate(self, shot_info: Shot,
                   max_range: Distance,
                   dist_step: Optional[Distance] = None,
@@ -66,6 +68,7 @@ class EngineProtocol(Protocol[ConfigT]):
             HitResult: Object for describing the trajectory.
         """
 
+    @abstractmethod
     def zero_angle(self, shot_info: Shot, distance: Distance) -> Angular:
         """
         Iterative algorithm to find barrel elevation needed for a particular zero

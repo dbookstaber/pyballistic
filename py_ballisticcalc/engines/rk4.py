@@ -78,8 +78,6 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         ).mul_by_const(velocity)  # type: ignore
         # endregion
 
-        min_step = min(props.calc_step, range_step_ft)
-
         data_filter = _TrajectoryDataFilter(filter_flags=filter_flags, range_step=range_step_ft,
                                             initial_position=range_vector, initial_velocity=velocity_vector,
                                             barrel_angle_rad=props.barrel_elevation_rad,
@@ -92,7 +90,7 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         termination_reason = None
         last_recorded_range = 0.0
         start_integration_step_count = self.integration_step_count
-        while (range_vector.x <= range_limit_ft + min_step) or (
+        while (range_vector.x <= range_limit_ft) or (
                 last_recorded_range <= range_limit_ft - 1e-6):
             self.integration_step_count += 1
 
@@ -160,9 +158,9 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
             ranges.append(make_trajectory_row(
                 props, data.time, data.position, data.velocity, data.mach, data_filter.current_flag)
             )
-        # Ensure that we have at least two data points in trajectory, or 1 if filter_flags==NONE
+        # Ensure that we have at least two data points in trajectory,
         # ... as well as last point if we had an incomplete trajectory
-        if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 0:
+        if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
             if len(ranges) > 0 and ranges[-1].time == time:  # But don't duplicate the last point.
                 pass
             else:

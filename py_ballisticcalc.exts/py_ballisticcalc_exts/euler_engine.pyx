@@ -94,7 +94,6 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         velocity_vector = mulS(&_tv, velocity)
         # endregion
 
-        min_step = fmin(calc_step, range_step_ft)
         # With non-zero look_angle, rounding can suggest multiple adjacent zero-crossings
         data_filter = TrajDataFilter_t_create(filter_flags=filter_flags, range_step=range_step_ft,
                                                  initial_position_ptr=&range_vector,
@@ -107,7 +106,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         termination_reason = None
         last_recorded_range = 0.0
 
-        while (range_vector.x <= range_limit_ft + min_step) or (
+        while (range_vector.x <= range_limit_ft) or (
                 last_recorded_range <= range_limit_ft - 1e-6):
             self.integration_step_count += 1
 
@@ -169,9 +168,9 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
                 data.time, &data.position, &data.velocity, data.mach,
                 &self._shot_s, density_ratio, drag, data_filter.current_flag
             ))
-        # Ensure that we have at least two data points in trajectory, or 1 if filter_flags==NONE
+        # Ensure that we have at least two data points in trajectory
         # ... as well as last point if we had an incomplete trajectory
-        if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 0:
+        if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
             if len(ranges) > 0 and ranges[-1].time == time:  # But don't duplicate the last point.
                 pass
             else:

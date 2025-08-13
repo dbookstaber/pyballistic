@@ -147,7 +147,7 @@ class _TrajectoryDataFilter:
             self.check_mach_crossing(velocity.magnitude(), mach)
         if self.filter & TrajFlag.APEX:
             self.check_apex(velocity)
-        if bool(self.current_flag & self.filter) and data is None:
+        if (bool(self.current_flag & self.filter) and data is None) or time==0.0:
             data = BaseTrajData(time=time, position=position,
                                 velocity=velocity, mach=mach)
         self.previous_time = time

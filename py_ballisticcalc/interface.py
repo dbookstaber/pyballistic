@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points, EntryPoint
 from typing import Generic, Any
+import warnings
 
 from deprecated import deprecated
 from typing_extensions import Union, List, Optional, TypeVar, Type
@@ -170,21 +171,25 @@ class Calculator(Generic[ConfigT]):
 
     def fire(self, shot: Shot,
              trajectory_range: Union[float, Distance],
-             trajectory_step: Optional[Union[float, Distance]] = None,
+             trajectory_step: Optional[Union[float, Distance]] = None, *,
              extra_data: bool = False,
+             dense_output: bool = False,
              time_step: float = 0.0,
+             flags: Union[TrajFlag, int] = TrajFlag.NONE,
              raise_range_error: bool = True) -> HitResult:
         """Calculates the trajectory for the given shot parameters.
 
         Args:
-            shot (Shot): Initial shot parameters, including position and barrel angle.
+            shot (Shot): Shot parameters, including position and barrel angle.
             trajectory_range (float | Distance): Distance at which to stop computing the trajectory.
             trajectory_step (float | Distance | None, optional): Distance between recorded trajectory points.
-                If 0 or None, defaults to `trajectory_range`.
-            extra_data (bool, optional): If True, requests all TrajFlags. Otherwise only requests TrajFlag.RANGE.
-                Defaults to False.
+                                                                 If 0 or None, defaults to `trajectory_range`.
+            extra_data (bool, optional): [DEPRECATED] Requests flags=TrajFlags.ALL
+                                         and trajectory_step=PreferredUnits.distance(1).
+            dense_output (bool, optional): HitResult stores all calculation steps so it can interpolate any point.
             time_step (float, optional): Minimum time sampling interval in seconds. If > 0, data is
-                recorded at least this frequently. Defaults to 0.0.
+                                         recorded at least this frequently. Defaults to 0.0.
+            flags (TrajFlag, optional): Flags for specific points of interest. Defaults to TrajFlag.NONE.
             raise_range_error (bool, optional): If True, raises RangeError if returned by integration.
 
         Returns:
@@ -192,17 +197,23 @@ class Calculator(Generic[ConfigT]):
         """
         trajectory_range = PreferredUnits.distance(trajectory_range)
         dist_step = trajectory_range
-        filter_flags = TrajFlag.RANGE
+        filter_flags = flags
         if trajectory_step:
             dist_step = PreferredUnits.distance(trajectory_step)
-            filter_flags = TrajFlag.RANGE
+            filter_flags |= TrajFlag.RANGE
             if dist_step.raw_value > trajectory_range.raw_value:
                 dist_step = trajectory_range
 
         if extra_data:
+            warnings.warn("extra_data is deprecated and will be removed in future versions. "
+                "Explicitly specify desired TrajectoryData frequency and flags.",
+                DeprecationWarning
+            )
+            #dist_step = PreferredUnits.distance(1.0)  # << For compatibility with v2.1
             filter_flags = TrajFlag.ALL
 
-        result = self._engine_instance.integrate(shot, trajectory_range, dist_step, time_step, filter_flags)
+        result = self._engine_instance.integrate(shot, trajectory_range, dist_step, time_step,
+                                                 filter_flags, dense_output=dense_output)
         if result.error and raise_range_error:
             raise result.error
         return result

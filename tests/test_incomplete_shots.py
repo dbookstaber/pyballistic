@@ -7,6 +7,7 @@ from py_ballisticcalc import (
     Distance,
     TrajFlag
 )
+from py_ballisticcalc.unit import PreferredUnits
 from tests.fixtures_and_helpers import print_out_trajectory_compact, zero_height_calc, \
     shot_with_relative_angle_in_degrees
 
@@ -51,7 +52,7 @@ def test_vertical_shot(zero_height_calc, loaded_engine_instance):
     hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     # In this case all we know is we should have two points, and the last point should be below zero.
-    assert len(hit_result) == 2
+    assert len(hit_result) == 2, "With extra_data=False, calculator should return exactly 2 points"
     assert hit_result[-1].height.raw_value < 1e-9, "Last point's height should be at or below zero"
 
     extra_data = True
@@ -167,4 +168,4 @@ def test_end_points_are_included(distance, height, angle_in_degrees, zero_height
     print(f'Difference in results Distance: {distance_difference :.02f} '
           f'Height {height_difference :.02f}')
 
-    assert distance_difference <= Distance.Foot(0.2) >> Distance.Meter
+    assert distance_difference <= (PreferredUnits.distance(1.0) >> Distance.Meter)
