@@ -42,7 +42,7 @@ __all__ = (
 cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
 
     cdef double get_calc_step(CythonizedRK4IntegrationEngine self):
-        return 0.0015 * CythonizedBaseIntegrationEngine.get_calc_step(self)  # like super().get_calc_step()
+        return 0.0025 * CythonizedBaseIntegrationEngine.get_calc_step(self)  # like super().get_calc_step()
 
     cdef object _integrate(CythonizedRK4IntegrationEngine self,
                                  double range_limit_ft, double range_step_ft,

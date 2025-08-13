@@ -579,13 +579,10 @@ cdef class CythonizedBaseIntegrationEngine:
             self._config_s.cMinimumVelocity = <double>0.0
             has_restore_min_velocity = 1
         
-        try:
-            trajectory = self._integrate(<double>9e9, <double>9e9, <double>0.0, <int>TrajFlag.APEX, <bint>False)[0]
-            hit_result = HitResult(shot_info, trajectory, extra=True)
-        except RangeError as e:
-            if e.last_distance is None:
-                raise e
-            hit_result = HitResult(shot_info, e.incomplete_trajectory, extra=True)
+        trajectory = self._integrate(<double>9e9, <double>9e9, <double>0.0, <int>TrajFlag.APEX, <bint>False)[0]
+        props = ShotProps.from_shot(shot_info)
+        props.filter_flags = TrajFlag.APEX
+        hit_result = HitResult(props, trajectory, extra=True)
 
         if has_restore_min_velocity:
             self._config_s.cMinimumVelocity = restore_min_velocity

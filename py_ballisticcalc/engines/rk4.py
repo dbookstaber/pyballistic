@@ -52,6 +52,7 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
             HitResult: Object describing the trajectory.
         """
         self.trajectory_count += 1
+        props.filter_flags = filter_flags
         _cMinimumVelocity = self._config.cMinimumVelocity
         _cMaximumDrop = -abs(self._config.cMaximumDrop)  # Ensure it's negative
         _cMinimumAltitude = self._config.cMinimumAltitude

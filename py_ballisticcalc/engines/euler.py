@@ -58,6 +58,7 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         Returns:
             HitResult: Object describing the trajectory.
         """
+        props.filter_flags = filter_flags
         _cMinimumVelocity = self._config.cMinimumVelocity
         _cMaximumDrop = -abs(self._config.cMaximumDrop)  # Ensure it's negative
         _cMinimumAltitude = self._config.cMinimumAltitude

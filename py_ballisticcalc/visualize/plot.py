@@ -52,13 +52,12 @@ def show_hit_result_plot() -> None:
 def add_danger_space_overlay(danger_space: DangerSpace, ax: 'Axes', label: Optional[str] = None):  # type: ignore
     """Highlights danger-space region on plot"""
 
-    cosine = math.cos(danger_space.look_angle >> Angular.Radian)
-    begin_dist = (danger_space.begin.distance >> PreferredUnits.distance) * cosine
-    begin_drop = (danger_space.begin.height >> PreferredUnits.drop) * cosine
-    end_dist = (danger_space.end.distance >> PreferredUnits.distance) * cosine
-    end_drop = (danger_space.end.height >> PreferredUnits.drop) * cosine
-    range_dist = (danger_space.at_range.distance >> PreferredUnits.distance) * cosine
-    range_drop = (danger_space.at_range.height >> PreferredUnits.drop) * cosine
+    begin_dist = (danger_space.begin.distance >> PreferredUnits.distance)
+    begin_drop = (danger_space.begin.height >> PreferredUnits.drop)
+    end_dist = (danger_space.end.distance >> PreferredUnits.distance)
+    end_drop = (danger_space.end.height >> PreferredUnits.drop)
+    range_dist = (danger_space.at_range.distance >> PreferredUnits.distance)
+    range_drop = (danger_space.at_range.height >> PreferredUnits.drop)
     h = danger_space.target_height >> PreferredUnits.drop
 
     # Target position and height:
@@ -73,7 +72,7 @@ def add_danger_space_overlay(danger_space: DangerSpace, ax: 'Axes', label: Optio
                       edgecolor='none', facecolor='r', alpha=0.3)
     ax.add_patch(polygon)
     if label is None:  # Add default label
-        label = f"Danger space\nat {danger_space.at_range.distance << PreferredUnits.distance}"
+        label = f"Danger space\nat {danger_space.at_range.slant_distance << PreferredUnits.distance}"
     if label != '':
         ax.text(begin_dist + (end_dist - begin_dist) / 2, end_drop, label, color='r',
                 linespacing=1.2, fontsize=PLOT_FONT_SIZE, ha='center', va='top')
@@ -120,7 +119,7 @@ def trajectory_as_plot(hit_result: HitResult, look_angle: Optional[Angular] = No
     :return: graph of the trajectory
     """
     if look_angle is None:
-        look_angle = hit_result.shot.look_angle
+        look_angle = hit_result.props.look_angle
 
     font_size = PLOT_FONT_SIZE
     df = hit_result.dataframe()
@@ -141,9 +140,9 @@ def trajectory_as_plot(hit_result: HitResult, look_angle: Optional[Angular] = No
     ax.plot(x_sight, y_sight, linestyle='--', color=PLOT_COLORS['sight'])
     # Barrel pointing line
     x_bbl = [0, max_range]
-    y_bbl = [-(hit_result.shot.weapon.sight_height >> PreferredUnits.drop),
+    y_bbl = [-(hit_result.props.shot.weapon.sight_height >> PreferredUnits.drop),
              max_range_in_drop_units * math.tan(hit_result.trajectory[0].angle >> Angular.Radian)
-             - (hit_result.shot.weapon.sight_height >> PreferredUnits.drop)]
+             - (hit_result.props.shot.weapon.sight_height >> PreferredUnits.drop)]
     ax.plot(x_bbl, y_bbl, linestyle=':', color=PLOT_COLORS['barrel'])
     # Line labels
     sight_above_bbl = y_sight[1] > y_bbl[1]

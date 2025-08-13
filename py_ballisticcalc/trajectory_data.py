@@ -654,7 +654,9 @@ class DangerSpace(NamedTuple):
             + f'for {self.target_height << PreferredUnits.drop} tall target ' \
             + (f'at {self.look_angle << Angular.Degree} look-angle ' if self.look_angle != 0 else '') \
             + f'ranges from {self.begin.slant_distance << PreferredUnits.distance} ' \
-            + f'to {self.end.slant_distance << PreferredUnits.distance}'
+            + f'to {self.end.slant_distance << PreferredUnits.distance}' \
+            + (f'\n\t(horizontal {self.begin.distance << PreferredUnits.distance} to {self.end.distance << PreferredUnits.distance})'
+               if self.look_angle != 0 else '')
 
     # pylint: disable=import-outside-toplevel
     def overlay(self, ax: 'Axes', label: Optional[str] = None):  # type: ignore

@@ -386,7 +386,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             from scipy.optimize import root_scalar  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError("SciPy and numpy are required for SciPyIntegrationEngine.") from e
-
+        props.filter_flags = filter_flags
         _cMinimumVelocity = self._config.cMinimumVelocity
         _cMaximumDrop = -abs(self._config.cMaximumDrop)  # Ensure it's negative
         _cMinimumAltitude = self._config.cMinimumAltitude
