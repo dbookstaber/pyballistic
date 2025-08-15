@@ -582,7 +582,7 @@ cdef class CythonizedBaseIntegrationEngine:
         trajectory = self._integrate(<double>9e9, <double>9e9, <double>0.0, <int>TrajFlag.APEX, <bint>False)[0]
         props = ShotProps.from_shot(shot_info)
         props.filter_flags = TrajFlag.APEX
-        hit_result = HitResult(props, trajectory, extra=True)
+        hit_result = HitResult(props, trajectory, None, extra=True)
 
         if has_restore_min_velocity:
             self._config_s.cMinimumVelocity = restore_min_velocity
