@@ -17,6 +17,9 @@ cdef class BaseTrajData:
         self.velocity = velocity
         self.mach = mach
 
+cdef BaseTrajData BaseTrajData_create(double time, V3dT position, V3dT velocity, double mach):
+    return BaseTrajData(time, position, velocity, mach)
+
 @final
 cdef class TrajectoryData:
     __slots__ = ('time', 'distance', 'velocity',

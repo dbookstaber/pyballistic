@@ -7,7 +7,10 @@ from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, sqrt, copysign
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajData, TrajectoryData
+from py_ballisticcalc_exts.trajectory_data cimport (
+    TrajFlag_t, BaseTrajData, TrajectoryData,
+    BaseTrajData_create,
+)
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     # types and methods
@@ -45,7 +48,7 @@ __all__ = (
 
 cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_step,
                   const V3dT *initial_position_ptr, const V3dT *initial_velocity_ptr,
-                  double time_step = 0.0):
+                  double time_step):
     return TrajDataFilter_t(
         filter_flags, TrajFlag_t.NONE, TrajFlag_t.NONE,
         time_step, range_step,
@@ -62,51 +65,144 @@ cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height
         tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
     tdf.look_angle = shot_data_ptr.look_angle
 
-cdef BaseTrajData TrajDataFilter_t_should_record(TrajDataFilter_t * tdf, const V3dT *position_ptr, const V3dT *velocity_ptr, double mach, double time):
-    cdef BaseTrajData data = None
+cdef BaseTrajData TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
+                                                 const V3dT *position_ptr,
+                                                 const V3dT *velocity_ptr,
+                                                 double mach,
+                                                 double time):
+    """
+    Decide whether to emit a BaseTrajData row at the current integration step.
+    Priority: ZERO (slant-height) -> MACH -> APEX -> RANGE -> TIME -> initial point.
+    Interpolates between previous and current state for the crossing events.
+    """
+    cdef BaseTrajData data = <BaseTrajData>None
     cdef double ratio
-    cdef V3dT temp_position, temp_velocity
-    cdef V3dT temp_sub_position, temp_sub_velocity
-    cdef V3dT temp_mul_position, temp_mul_velocity
+    cdef V3dT pos_interp, vel_interp
+    cdef V3dT dv, dp, tmp
+    cdef double prev_time = tdf.previous_time
+    cdef double prev_mach = tdf.previous_mach
+    cdef V3dT prev_pos = tdf.previous_position
+    cdef V3dT prev_vel = tdf.previous_velocity
+    cdef V3dT curr_pos = position_ptr[0]
+    cdef V3dT curr_vel = velocity_ptr[0]
+    cdef double curr_speed = mag(velocity_ptr)
+    cdef double prev_speed
+    cdef double ca, sa, s_prev, s_curr
+    cdef double prev_vm, curr_vm
 
     tdf.current_flag = TrajFlag_t.NONE
-    if (tdf.range_step > 0) and (position_ptr.x >= tdf.next_record_distance):
-        while tdf.next_record_distance + tdf.range_step < position_ptr.x:
-            # Handle case where we have stepped past more than one record distance
+
+    # ZERO crossing via slant-height sign change (s = y*cos(look) − x*sin(look))
+    if (tdf.filter & TrajFlag_t.ZERO) != 0:
+        ca = cos(tdf.look_angle)
+        sa = sin(tdf.look_angle)
+        s_prev = prev_pos.y * ca - prev_pos.x * sa
+        s_curr = curr_pos.y * ca - curr_pos.x * sa
+        if not (tdf.seen_zero & TrajFlag_t.ZERO_UP):
+            if s_prev < 0.0 and s_curr >= 0.0 and s_curr != s_prev:
+                ratio = (0.0 - s_prev) / (s_curr - s_prev)
+                dp = sub(position_ptr, &prev_pos)
+                dv = sub(velocity_ptr, &prev_vel)
+                tmp = mulS(&dp, ratio)
+                pos_interp = add(&prev_pos, &tmp)
+                tmp = mulS(&dv, ratio)
+                vel_interp = add(&prev_vel, &tmp)
+                data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
+                                           pos_interp,
+                                           vel_interp,
+                                           prev_mach + (mach - prev_mach) * ratio)
+                tdf.current_flag |= TrajFlag_t.ZERO_UP
+                tdf.seen_zero |= TrajFlag_t.ZERO_UP
+        elif not (tdf.seen_zero & TrajFlag_t.ZERO_DOWN):
+            if s_prev >= 0.0 and s_curr < 0.0 and s_curr != s_prev:
+                ratio = (0.0 - s_prev) / (s_curr - s_prev)
+                dp = sub(position_ptr, &prev_pos)
+                dv = sub(velocity_ptr, &prev_vel)
+                tmp = mulS(&dp, ratio)
+                pos_interp = add(&prev_pos, &tmp)
+                tmp = mulS(&dv, ratio)
+                vel_interp = add(&prev_vel, &tmp)
+                data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
+                                           pos_interp,
+                                           vel_interp,
+                                           prev_mach + (mach - prev_mach) * ratio)
+                tdf.current_flag |= TrajFlag_t.ZERO_DOWN
+                tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
+
+    # MACH crossing (v/mach from >1 to <=1)
+    if data is None and (tdf.filter & TrajFlag_t.MACH) != 0 and mach > 0.0 and prev_mach > 0.0:
+        prev_speed = mag(&prev_vel)
+        prev_vm = prev_speed / prev_mach
+        curr_vm = curr_speed / mach
+        if prev_vm > 1.0 and curr_vm <= 1.0 and curr_vm != prev_vm:
+            ratio = (1.0 - prev_vm) / (curr_vm - prev_vm)
+            dp = sub(position_ptr, &prev_pos)
+            dv = sub(velocity_ptr, &prev_vel)
+            tmp = mulS(&dp, ratio)
+            pos_interp = add(&prev_pos, &tmp)
+            tmp = mulS(&dv, ratio)
+            vel_interp = add(&prev_vel, &tmp)
+            data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
+                                       pos_interp,
+                                       vel_interp,
+                                       prev_mach + (mach - prev_mach) * ratio)
+            tdf.current_flag |= TrajFlag_t.MACH
+
+    # APEX crossing (vy from >0 to <=0)
+    if data is None and (tdf.filter & TrajFlag_t.APEX) != 0:
+        if prev_vel.y > 0.0 and curr_vel.y <= 0.0 and curr_vel.y != prev_vel.y:
+            ratio = (0.0 - prev_vel.y) / (curr_vel.y - prev_vel.y)
+            dp = sub(position_ptr, &prev_pos)
+            dv = sub(velocity_ptr, &prev_vel)
+            tmp = mulS(&dp, ratio)
+            pos_interp = add(&prev_pos, &tmp)
+            tmp = mulS(&dv, ratio)
+            vel_interp = add(&prev_vel, &tmp)
+            data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
+                                       pos_interp,
+                                       vel_interp,
+                                       prev_mach + (mach - prev_mach) * ratio)
+            tdf.current_flag |= TrajFlag_t.APEX
+
+    # RANGE step
+    if data is None and (tdf.range_step > 0) and (curr_pos.x >= tdf.next_record_distance):
+        while tdf.next_record_distance + tdf.range_step < curr_pos.x:
             tdf.next_record_distance += tdf.range_step
-        if position_ptr.x > tdf.previous_position.x:
-            # Interpolate to get BaseTrajData at the record distance
-            ratio = (tdf.next_record_distance - tdf.previous_position.x) / (position_ptr.x - tdf.previous_position.x)
-            temp_sub_position = sub(position_ptr, &tdf.previous_position)
-            temp_mul_position = mulS(&temp_sub_position, ratio)
-            temp_position = add(&tdf.previous_position, &temp_mul_position)
-            temp_sub_velocity = sub(velocity_ptr, &tdf.previous_velocity)
-            temp_mul_velocity = mulS(&temp_sub_velocity, ratio)
-            temp_velocity = add(&tdf.previous_velocity, &temp_mul_velocity)
-            data = BaseTrajData(
-                time=tdf.previous_time + (time - tdf.previous_time) * ratio,
-                position=temp_position,
-                velocity=temp_velocity,
-                mach=tdf.previous_mach + (mach - tdf.previous_mach) * ratio
-            )
+        if curr_pos.x > prev_pos.x:
+            ratio = (tdf.next_record_distance - prev_pos.x) / (curr_pos.x - prev_pos.x)
+            dp = sub(position_ptr, &prev_pos)
+            dv = sub(velocity_ptr, &prev_vel)
+            tmp = mulS(&dp, ratio)
+            pos_interp = add(&prev_pos, &tmp)
+            tmp = mulS(&dv, ratio)
+            vel_interp = add(&prev_vel, &tmp)
+            data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
+                                       pos_interp,
+                                       vel_interp,
+                                       prev_mach + (mach - prev_mach) * ratio)
         tdf.current_flag |= TrajFlag_t.RANGE
         tdf.next_record_distance += tdf.range_step
         tdf.time_of_last_record = time
-    elif tdf.time_step > 0:
-        _check_next_time(tdf, time)
-    if tdf.filter & TrajFlag_t.ZERO:
-        _check_zero_crossing(tdf, position_ptr)
-    if tdf.filter & TrajFlag_t.MACH:
-        _check_mach_crossing(tdf, mag(velocity_ptr), mach)
-    if tdf.filter & TrajFlag_t.APEX:
-        _check_apex(tdf, velocity_ptr)
-    if ((tdf.current_flag & tdf.filter) != 0 and data is None) or time==0:
-        data = BaseTrajData(time=time, position=position_ptr[0],
-                            velocity=velocity_ptr[0], mach=mach)
+
+    # TIME step
+    if data is None and tdf.time_step > 0 and time > tdf.time_of_last_record + tdf.time_step:
+        tdf.current_flag |= TrajFlag_t.RANGE
+        tdf.time_of_last_record = time
+        data = BaseTrajData_create(time, curr_pos, curr_vel, mach)
+
+    # Initial point
+    if data is None and time == 0.0:
+        data = BaseTrajData_create(time, curr_pos, curr_vel, mach)
+
+    # Update state
     tdf.previous_time = time
-    tdf.previous_position = position_ptr[0]
-    tdf.previous_velocity = velocity_ptr[0]
+    tdf.previous_position = curr_pos
+    tdf.previous_velocity = curr_vel
     tdf.previous_mach = mach
+    if mach != 0.0:
+        tdf.previous_v_mach = curr_speed / mach
+    else:
+        tdf.previous_v_mach = 9e9
     return data
 
 cdef void _check_next_time(TrajDataFilter_t * tdf, double time):
@@ -121,22 +217,22 @@ cdef void _check_mach_crossing(TrajDataFilter_t * tdf, double velocity, double m
     tdf.previous_v_mach = current_v_mach
 
 cdef void _check_zero_crossing(TrajDataFilter_t * tdf, const V3dT *range_vector_ptr):
-    if range_vector_ptr.x > 0:
-        # Zero reference line is the sight line defined by look_angle
-        reference_height = range_vector_ptr.x * tan(tdf.look_angle)
-        # If we haven't seen ZERO_UP, we look for that first
-        if not (tdf.seen_zero & TrajFlag_t.ZERO_UP):
-            if range_vector_ptr.y >= reference_height:
-                tdf.current_flag |= TrajFlag_t.ZERO_UP
-                tdf.seen_zero |= TrajFlag_t.ZERO_UP
-        # We've crossed above sight line; now look for crossing back through it
-        elif not (tdf.seen_zero & TrajFlag_t.ZERO_DOWN):
-            if range_vector_ptr.y < reference_height:
-                tdf.current_flag |= TrajFlag_t.ZERO_DOWN
-                tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
+    # Deprecated by new ZERO detection in TrajDataFilter_t_should_record; kept for compatibility if used elsewhere
+    cdef double ca = cos(tdf.look_angle)
+    cdef double sa = sin(tdf.look_angle)
+    cdef double s_prev = tdf.previous_position.y * ca - tdf.previous_position.x * sa
+    cdef double s_curr = range_vector_ptr[0].y * ca - range_vector_ptr[0].x * sa
+    if not (tdf.seen_zero & TrajFlag_t.ZERO_UP):
+        if s_prev < 0.0 and s_curr >= 0.0:
+            tdf.current_flag |= TrajFlag_t.ZERO_UP
+            tdf.seen_zero |= TrajFlag_t.ZERO_UP
+    elif not (tdf.seen_zero & TrajFlag_t.ZERO_DOWN):
+        if s_prev >= 0.0 and s_curr < 0.0:
+            tdf.current_flag |= TrajFlag_t.ZERO_DOWN
+            tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
 
 cdef void _check_apex(TrajDataFilter_t * tdf, const V3dT *velocity_vector_ptr):
-    if velocity_vector_ptr.y <= 0 and tdf.previous_velocity.y > 0:
+    if velocity_vector_ptr[0].y <= 0 and tdf.previous_velocity.y > 0:
         # We have crossed the apex
         tdf.current_flag |= TrajFlag_t.APEX
 

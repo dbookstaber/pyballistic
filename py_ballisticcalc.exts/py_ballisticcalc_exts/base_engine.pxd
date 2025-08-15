@@ -56,7 +56,7 @@ cdef extern from "include/bclib.h" nogil:
 cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_step,
                                               const V3dT *initial_position_ptr,
                                               const V3dT *initial_velocity_ptr,
-                                              double time_step = ?)
+                                              double time_step)
 cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotData_t *shot_data_ptr)
 cdef BaseTrajData TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
                                                  const V3dT *position_ptr,
