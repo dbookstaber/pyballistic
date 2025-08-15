@@ -29,7 +29,7 @@ from py_ballisticcalc.engines.base_engine import (
 )
 from py_ballisticcalc.exceptions import OutOfRangeError, RangeError, ZeroFindingError
 from py_ballisticcalc.logger import logger
-from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, ShotProps, HitResult, make_trajectory_row
+from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, ShotProps, HitResult
 from py_ballisticcalc.unit import Distance, Angular
 from py_ballisticcalc.vector import Vector
 
@@ -506,7 +506,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                 position = Vector(*state[0:3])
                 velocity = Vector(*state[3:6])
                 density_ratio, mach = props.get_density_and_mach_for_altitude(position[1])
-                return make_trajectory_row(props, t, position, velocity, mach, flag)
+                return TrajectoryData.from_props(props, t, position, velocity, mach, flag)
 
             if sol.t[-1] == 0:
                 # If the last time is 0, we only have the initial state
@@ -579,14 +579,14 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             if filter_flags:
                 def add_row(time, state, flag):
                     """Add a row to ranges, keeping it sorted by time.
-                       If row this time already exists then add this flag to it."""
+                       If a row with (approximately) this time already exists then add this flag to it."""
                     idx = bisect_left_key(ranges, time, key=lambda r: r.time)
                     if idx < len(ranges):
                         # If we match existing row's time then just add this flag to the row
                         if abs(ranges[idx].time - time) < self.SEPARATE_ROW_TIME_DELTA:
                             ranges[idx] = make_row(time, state, ranges[idx].flag | flag)
                             return
-                        elif idx > 0 and abs(ranges[idx - 1].time - time) < self.SEPARATE_ROW_TIME_DELTA:
+                        if idx > 0 and abs(ranges[idx - 1].time - time) < self.SEPARATE_ROW_TIME_DELTA:
                             ranges[idx - 1] = make_row(time, state, ranges[idx - 1].flag | flag)
                             return
                     ranges.insert(idx, make_row(time, state, flag))  # Insert at sorted position
@@ -645,4 +645,4 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         error = None
         if termination_reason is not None and termination_reason is not self.HitZero:
             error = RangeError(termination_reason, ranges)
-        return HitResult(props, ranges, filter_flags > 0, error)
+        return HitResult(props, ranges, None, filter_flags > 0, error)

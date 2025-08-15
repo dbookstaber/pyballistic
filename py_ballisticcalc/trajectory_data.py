@@ -27,7 +27,6 @@ __all__ = (
     'DangerSpace',
     'CurvePoint',
     'create_trajectory_row',
-    'make_trajectory_row',
     'calculate_energy',
     'calculate_ogw',
     'get_correction',
@@ -46,6 +45,13 @@ _TrajFlagNames = {
     32: 'MRT',  # Mid-Range Trajectory (a.k.a. Maximum Ordinate): highest point of trajectory over the sight line
     63: 'ALL',
 }
+
+def lagrange_quadratic(x, x0, y0, x1, y1, x2, y2) -> float:
+    """Quadratic interpolation for y at x, given three points. (Does not depend on order of points.)"""
+    L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
+    L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
+    L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
+    return y0 * L0 + y1 * L1 + y2 * L2
 
 
 class TrajFlag(int):
@@ -84,12 +90,70 @@ class CurvePoint(NamedTuple):
 
 class BaseTrajData(NamedTuple):
     """Minimal data for one point in ballistic trajectory"""
-    time: float
-    position: Vector
-    velocity: Vector
+    time: float  # Units: seconds
+    position: Vector  # Units: feet
+    velocity: Vector  # Units: fps
     mach: float
 
+    @staticmethod
+    def interpolate(key_attribute: str, key_value: float,
+                    p0: "BaseTrajData", p1: "BaseTrajData", p2: "BaseTrajData") -> "BaseTrajData":
+        """
+        Quadratic (Lagrange) interpolation of a BaseTrajData point.
 
+        Args:
+            key_attribute (str): Can be 'time', 'mach', or a vector component like 'position.x' or 'velocity.z'.
+            key_value (float): The value to interpolate.
+            p0, p1, p2 (BaseTrajData): Any three points surrounding the point where key_attribute==value.
+
+        Returns:
+            BaseTrajData: The interpolated data point.
+
+        Raises:
+            AttributeError: If the key_attribute is not a member of BaseTrajData.
+            ZeroDivisionError: If the interpolation fails due to zero division.
+                               (This will result if two of the points are identical).
+        """
+        def get_key_val(td: "BaseTrajData", path: str) -> float:
+            """Helper to get the key value from a BaseTrajData point."""
+            if '.' in path:
+                top, component = path.split('.', 1)
+                obj = getattr(td, top)
+                return getattr(obj, component)
+            else:
+                return getattr(td, path)
+
+        # independent variable values
+        x0 = get_key_val(p0, key_attribute)
+        x1 = get_key_val(p1, key_attribute)
+        x2 = get_key_val(p2, key_attribute)
+        def _interp_scalar(y0, y1, y2):
+            return lagrange_quadratic(key_value, x0, y0, x1, y1, x2, y2)
+
+        time = _interp_scalar(p0.time, p1.time, p2.time) if key_attribute != 'time' else key_value
+        px = _interp_scalar(p0.position.x, p1.position.x, p2.position.x)
+        py = _interp_scalar(p0.position.y, p1.position.y, p2.position.y)
+        pz = _interp_scalar(p0.position.z, p1.position.z, p2.position.z)
+        position = Vector(px, py, pz)
+        vx = _interp_scalar(p0.velocity.x, p1.velocity.x, p2.velocity.x)
+        vy = _interp_scalar(p0.velocity.y, p1.velocity.y, p2.velocity.y)
+        vz = _interp_scalar(p0.velocity.z, p1.velocity.z, p2.velocity.z)
+        velocity = Vector(vx, vy, vz)
+        mach = _interp_scalar(p0.mach, p1.mach, p2.mach) if key_attribute != 'mach' else key_value
+
+        return BaseTrajData(time=time, position=position, velocity=velocity, mach=mach)
+
+
+TRAJECTORY_DATA_ATTRIBUTES = Literal[
+    'time', 'distance', 'velocity', 'mach', 'height', 'slant_height', 'drop_adj',
+    'windage', 'windage_adj', 'slant_distance', 'angle', 'density_ratio', 'drag',
+    'energy', 'ogw', 'flag', 'x', 'y', 'z'
+]
+TRAJECTORY_DATA_SYNONYMS: dict[TRAJECTORY_DATA_ATTRIBUTES, TRAJECTORY_DATA_ATTRIBUTES] = {
+    'x': 'distance',
+    'y': 'height',
+    'z': 'windage',
+}
 class TrajectoryData(NamedTuple):
     """
     Data for one point in ballistic trajectory.
@@ -208,16 +272,126 @@ class TrajectoryData(NamedTuple):
             self.ogw >> PreferredUnits.ogw,
             self.flag
         )
-TRAJECTORY_DATA_ATTRIBUTES = Literal[
-    'time', 'distance', 'velocity', 'mach', 'height', 'slant_height', 'drop_adj',
-    'windage', 'windage_adj', 'slant_distance', 'angle', 'density_ratio', 'drag',
-    'energy', 'ogw', 'flag', 'x', 'y', 'z'
-]
-TRAJECTORY_DATA_SYNONYMS: dict[TRAJECTORY_DATA_ATTRIBUTES, TRAJECTORY_DATA_ATTRIBUTES] = {
-    'x': 'distance',
-    'y': 'height',
-    'z': 'windage',
-}
+
+    @staticmethod
+    def from_base_data(props: "ShotProps", data: BaseTrajData,
+                       flag: Union[TrajFlag, int] = TrajFlag.NONE) -> "TrajectoryData":
+        """Creates a TrajectoryData object from BaseTrajData."""
+        return TrajectoryData.from_props(props, data.time, data.position, data.velocity, data.mach, flag)
+
+    @staticmethod
+    def from_props(props: "ShotProps",
+                    time: float,
+                    range_vector: Vector,
+                    velocity_vector: Vector,
+                    mach: float,
+                    flag: Union[TrajFlag, int] = TrajFlag.NONE) -> "TrajectoryData":
+        """Creates a TrajectoryData object, which corresponds to one point in the ballistic trajectory."""
+        spin_drift = props.spin_drift(time)
+        velocity = velocity_vector.magnitude()
+        windage = range_vector.z + spin_drift
+        drop_adjustment = get_correction(range_vector.x, range_vector.y)
+        windage_adjustment = get_correction(range_vector.x, windage)
+        trajectory_angle = math.atan2(velocity_vector.y, velocity_vector.x)
+        look_angle_cos = math.cos(props.look_angle_rad)
+        look_angle_sin = math.sin(props.look_angle_rad)
+        density_ratio, _ = props.get_density_and_mach_for_altitude(range_vector.y)
+        drag = props.drag_by_mach(velocity / mach)
+        return TrajectoryData(
+            time=time,
+            distance=_new_feet(range_vector.x),
+            velocity=_new_fps(velocity),
+            mach=velocity / mach,
+            height=_new_feet(range_vector.y),
+            slant_height=_new_feet(range_vector.y * look_angle_cos - range_vector.x * look_angle_sin),
+            drop_adj=_new_rad(drop_adjustment - (props.look_angle_rad if range_vector.x else 0)),
+            windage=_new_feet(windage),
+            windage_adj=_new_rad(windage_adjustment),
+            slant_distance=_new_feet(range_vector.x * look_angle_cos + range_vector.y * look_angle_sin),
+            angle=_new_rad(trajectory_angle),
+            density_ratio=density_ratio,
+            drag=drag,
+            energy=_new_ft_lb(calculate_energy(props.weight_grains, velocity)),
+            ogw=_new_lb(calculate_ogw(props.weight_grains, velocity)),
+            flag=flag
+        )
+
+    @staticmethod
+    def interpolate(key_attribute: TRAJECTORY_DATA_ATTRIBUTES, value: Union[float, GenericDimension],
+                    p0: "TrajectoryData", p1: "TrajectoryData", p2: "TrajectoryData",
+                    flag: Union[TrajFlag, int]=TrajFlag.NONE) -> "TrajectoryData":
+        """
+        Quadratic interpolation for TrajectoryData where key_attribute==value.
+
+        Args:
+            key_attribute (str): The name of the TrajectoryData attribute to key on (e.g., 'time', 'distance').
+            value (Union[float, GenericDimension]): The value of the key attribute to find. If a float is provided
+                                                    for a dimensioned attribute, it's assumed to be a .raw_value.
+            p0, p1, p2 (TrajectoryData): Any three points surrounding the point where key_attribute==value.
+            flag (Optional[Union[TrajFlag, int]]): The flag to assign to the new TrajectoryData point.
+
+        Returns:
+            TrajectoryData: (where key_attribute==value)
+
+        Raises:
+            AttributeError: If TrajectoryData doesn't have the specified attribute.
+            KeyError: If the key_attribute is 'flag'.
+            ZeroDivisionError: If the interpolation fails due to zero division.
+                               (This will result if two of the points are identical).
+        """
+        key_attribute = TRAJECTORY_DATA_SYNONYMS.get(key_attribute, key_attribute)  # Resolve synonyms
+        if not hasattr(TrajectoryData, key_attribute):
+            raise AttributeError(f"TrajectoryData has no attribute '{key_attribute}'")
+        if key_attribute == 'flag':
+            raise KeyError("Cannot interpolate based on 'flag' attribute")
+        key_value = value.raw_value if isinstance(value, GenericDimension) else value
+        
+        def get_key_val(td):
+            """Helper to get the raw value of the key attribute from a TrajectoryData point"""
+            val = getattr(td, key_attribute)
+            return val.raw_value if hasattr(val, 'raw_value') else float(val)
+
+        # The independent variable for interpolation (x-axis)
+        x_val = key_value
+        x0, x1, x2 = get_key_val(p0), get_key_val(p1), get_key_val(p2)
+
+        # Use reflection to build the new TrajectoryData object
+        interpolated_fields: typing.Dict[str, typing.Any] = {}
+        for field_name in TrajectoryData._fields:
+            if field_name == 'flag':
+                continue
+
+            p0_field = getattr(p0, field_name)
+
+            if field_name == key_attribute:
+                if isinstance(value, GenericDimension):
+                    interpolated_fields[field_name] = value
+                else:  # value is a float, assume it's in the same unit as the original data
+                    if isinstance(p0_field, GenericDimension):
+                        interpolated_fields[field_name] = type(p0_field).new_from_raw(float(value), p0_field.units)
+                    else:
+                        interpolated_fields[field_name] = float(value)
+                continue
+
+            # Interpolate all other fields
+            y0_val = p0_field
+            y1_val = getattr(p1, field_name)
+            y2_val = getattr(p2, field_name)
+
+            if isinstance(y0_val, GenericDimension):
+                y0, y1, y2 = y0_val.raw_value, y1_val.raw_value, y2_val.raw_value
+                interpolated_raw = lagrange_quadratic(x_val, x0, y0, x1, y1, x2, y2)
+                interpolated_fields[field_name] = type(y0_val).new_from_raw(interpolated_raw, y0_val.units)
+            elif isinstance(y0_val, (float, int)):
+                interpolated_fields[field_name] = lagrange_quadratic(x_val, x0, float(y0_val),
+                                                                             x1, float(y1_val),
+                                                                             x2, float(y2_val)
+                )
+            else:
+                raise TypeError(f"Cannot interpolate field '{field_name}' of type {type(y0_val)}")
+
+        interpolated_fields['flag'] = flag
+        return TrajectoryData(**interpolated_fields)
 
 
 @dataclass
@@ -350,45 +524,8 @@ class ShotProps:
     def get_density_and_mach_for_altitude(self, drop: float):
         return self.shot.atmo.get_density_and_mach_for_altitude(self.alt0_ft + drop)
 
-def make_trajectory_row(props: ShotProps,
-                time: float,
-                range_vector: Vector,
-                velocity_vector: Vector,
-                mach: float,
-                flag: Union[TrajFlag, int] = TrajFlag.NONE) -> TrajectoryData:
-    """Creates a TrajectoryData object, which corresponds to one point in the ballistic trajectory."""
-    spin_drift = props.spin_drift(time)
-    velocity = velocity_vector.magnitude()
-    windage = range_vector.z + spin_drift
-    drop_adjustment = get_correction(range_vector.x, range_vector.y)
-    windage_adjustment = get_correction(range_vector.x, windage)
-    trajectory_angle = math.atan2(velocity_vector.y, velocity_vector.x)
-    look_angle_cos = math.cos(props.look_angle_rad)
-    look_angle_sin = math.sin(props.look_angle_rad)
-    density_ratio, _ = props.get_density_and_mach_for_altitude(range_vector.y)
-    drag = props.drag_by_mach(velocity / mach)
-    return TrajectoryData(
-        time=time,
-        distance=_new_feet(range_vector.x),
-        velocity=_new_fps(velocity),
-        mach=velocity / mach,
-        height=_new_feet(range_vector.y),
-        slant_height=_new_feet(range_vector.y * look_angle_cos - range_vector.x * look_angle_sin),
-        drop_adj=_new_rad(drop_adjustment - (props.look_angle_rad if range_vector.x else 0)),
-        windage=_new_feet(windage),
-        windage_adj=_new_rad(windage_adjustment),
-        slant_distance=_new_feet(range_vector.x * look_angle_cos + range_vector.y * look_angle_sin),
-        angle=_new_rad(trajectory_angle),
-        density_ratio=density_ratio,
-        drag=drag,
-        energy=_new_ft_lb(calculate_energy(props.weight_grains, velocity)),
-        ogw=_new_lb(calculate_ogw(props.weight_grains, velocity)),
-        flag=flag
-    )
-
-
 # pylint: disable=too-many-positional-arguments
-@deprecated(reason="Use make_trajectory_row instead.")
+@deprecated(reason="Use TrajectoryData.from_props instead.")
 def create_trajectory_row(time: float, range_vector: Vector, velocity_vector: Vector,
                           velocity: float, mach: float, spin_drift: float, look_angle: float,
                           density_ratio: float, drag: float, weight: float,
@@ -678,26 +815,25 @@ class DangerSpace(NamedTuple):
             ) from err
 
 
-def _lagrange_quadratic(x, x0, y0, x1, y1, x2, y2) -> float:
-    """Quadratic Lagrange interpolation at x given three points."""
-    L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
-    L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
-    L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
-    return y0 * L0 + y1 * L1 + y2 * L2
-
 # pylint: disable=import-outside-toplevel
 @dataclass(frozen=True)
 class HitResult:
     """Computed trajectory data of the shot.
 
     Attributes:
-        shot (ShotProps): The shot conditions.
+        shot (ShotProps): The parameters of the shot calculation.
         trajectory (list[TrajectoryData]): Computed TrajectoryData points.
-        extra (bool): Whether special points (TrajFlag > 0) were requested.
+        base_data (list[BaseTrajData]): Base trajectory data points for interpolation.
+        extra (bool): [DEPRECATED] Whether special points (TrajFlag > 0) were requested.
         error (Optional[RangeError]): RangeError, if any.
+
+    TODO:
+    * Implement dense_output in cythonized engines to populate base_data
+    * Use base_data for interpolation if present
     """
     props: ShotProps
     trajectory: list[TrajectoryData] = field(repr=False)
+    base_data: Optional[list[BaseTrajData]] = field(repr=False)
     extra: bool = False
     error: Optional[RangeError] = None
 
@@ -719,8 +855,9 @@ class HitResult:
 
     def __check_flag__(self, flag: Union[TrajFlag, int]):
         if not self.props.filter_flags & flag:
-            raise AttributeError(f"{TrajFlag.name(flag)} was not requested in trajectory. "
-                                  f"Use Calculator.fire(..., extra_data=True)")
+            flag_name = TrajFlag.name(flag)
+            raise AttributeError(f"{flag_name} was not requested in trajectory. "
+                                 f"Use Calculator.fire(..., flags=TrajFlag.{flag_name}) to include it.")
 
     def zeros(self) -> list[TrajectoryData]:
         """
@@ -755,18 +892,18 @@ class HitResult:
                      value: Union[float, GenericDimension],
                      start_from_time: float=0.0) -> 'TrajectoryData':
         """
-        Interpolates the trajectory to find the data at a specific point,
-            preserving the units of the original trajectory data.
+        Gets TrajectoryData where key_attribute==value, interpolating to create new object if necessary.
+            Preserves the units of the original trajectory data.
 
         Args:
             key_attribute (str): The name of the TrajectoryData attribute to key on (e.g., 'time', 'distance').
             value (Union[float, GenericDimension]): The value of the key attribute to find. If a float is provided
                                                     for a dimensioned attribute, it's assumed to be a .raw_value.
             start_from_time (float): The time to center the search from (default is 0.0).  If the target value is
-                at a local extremum then the search will only go forward in time.
+                                     at a local extremum then the search will only go forward in time.
 
         Returns:
-            TrajectoryData: An interpolated trajectory data point.
+            TrajectoryData: (where key_attribute==value)
 
         Raises:
             AttributeError: If TrajectoryData doesn't have the specified attribute.
@@ -791,9 +928,9 @@ class HitResult:
         n = len(traj)
         epsilon = 1e-9  # Very small tolerance for floating point comparison
         key_value = value.raw_value if isinstance(value, GenericDimension) else value
-
-        # Helper to get the raw value of the key attribute from a TrajectoryData point
+        
         def get_key_val(td):
+            """Helper to get the raw value of the key attribute from a TrajectoryData point"""
             val = getattr(td, key_attribute)
             return val.raw_value if hasattr(val, 'raw_value') else val
 
@@ -855,45 +992,7 @@ class HitResult:
             p0, p1, p2 = traj[n - 3], traj[n - 2], traj[n - 1]
         else:
             p0, p1, p2 = traj[target_idx - 1], traj[target_idx], traj[target_idx + 1]
-
-        # The independent variable for interpolation (x-axis)
-        x_val = key_value
-        x0, x1, x2 = get_key_val(p0), get_key_val(p1), get_key_val(p2)
-
-        # Use reflection to build the new TrajectoryData object
-        interpolated_fields: typing.Dict[str, typing.Any] = {}
-        for field_name in TrajectoryData._fields:
-            if field_name == 'flag':
-                continue
-
-            p0_field = getattr(p0, field_name)
-
-            if field_name == key_attribute:
-                if isinstance(value, GenericDimension):
-                    interpolated_fields[field_name] = value
-                else:  # value is a float, assume it's in the same unit as the original data
-                    if isinstance(p0_field, GenericDimension):
-                        interpolated_fields[field_name] = type(p0_field).new_from_raw(float(value), p0_field.units)
-                    else:
-                        interpolated_fields[field_name] = float(value)
-                continue
-
-            # Interpolate all other fields
-            y0_val = p0_field
-            y1_val = getattr(p1, field_name)
-            y2_val = getattr(p2, field_name)
-
-            if isinstance(y0_val, GenericDimension):
-                y0, y1, y2 = y0_val.raw_value, y1_val.raw_value, y2_val.raw_value
-                interpolated_raw = _lagrange_quadratic(x_val, x0, y0, x1, y1, x2, y2)
-                interpolated_fields[field_name] = type(y0_val).new_from_raw(interpolated_raw, y0_val.units)
-            elif isinstance(y0_val, float):
-                interpolated_fields[field_name] = _lagrange_quadratic(x_val, x0, y0_val, x1, y1_val, x2, y2_val)
-            else:
-                raise TypeError(f"Cannot interpolate field '{field_name}' of type {type(y0_val)}")
-
-        interpolated_fields['flag'] = TrajFlag.NONE
-        return TrajectoryData(**interpolated_fields)
+        return TrajectoryData.interpolate(key_attribute, value, p0, p1, p2)
 
     @deprecated(reason="Use get_at() instead for better flexibility.")
     def index_at_distance(self, d: Distance) -> int:

@@ -267,7 +267,7 @@ cdef class CythonizedBaseIntegrationEngine:
         self._free_trajectory()
         props = ShotProps.from_shot(shot_info)
         props.filter_flags = filter_flags
-        return HitResult(props, object[0], filter_flags > 0, object[1])
+        return HitResult(props, object[0], None, filter_flags > 0, object[1])
 
     cdef void _free_trajectory(CythonizedBaseIntegrationEngine self):
         if self._wind_sock is not NULL:

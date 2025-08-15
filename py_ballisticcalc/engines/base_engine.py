@@ -8,8 +8,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
 
-from typing_extensions import Optional, NamedTuple, Union, Tuple, Dict, TypedDict, TypeVar
+from typing_extensions import Dict, List, NamedTuple, Optional, Tuple, TypedDict, TypeVar, Union
 
+from py_ballisticcalc._compat import bisect_left_key
 from py_ballisticcalc.conditions import Shot, Wind
 from py_ballisticcalc.exceptions import ZeroFindingError, OutOfRangeError, SolverRuntimeError
 from py_ballisticcalc.generics.engine import EngineProtocol
@@ -72,125 +73,155 @@ def create_base_engine_config(interface_config: Optional[BaseEngineConfigDict] =
 
 class _TrajectoryDataFilter:
     """
-    Determines when to record trajectory data points based on range and time.
-    For range steps, interpolates between integration steps to get the exact point.
-    There is no interpolation for other points of interest (APEX, MACH, ZERO), unless
-        they correspond to a range step, in which case they are interpolated to the range step.
+    Determines when to record TrajectoryData rows based on TrajFlags and attribute steps.
+    Interpolates for requested points.
+    Assumes that .record will be called sequentially across the trajectory.
     """
+    EPSILON = 1e-6  # Float difference considered significant enough to justify interpolation
+    props: ShotProps
     filter: Union[TrajFlag, int]
     current_flag: Union[TrajFlag, int]
     seen_zero: Union[TrajFlag, int]
     time_of_last_record: float
     time_step: float
     range_step: float
-    previous_mach: float
-    previous_time: float
-    previous_position: Vector
-    previous_velocity: Vector
-    previous_v_mach: float
+    prev_data: Optional[BaseTrajData]
+    prev_prev_data: Optional[BaseTrajData]
     next_record_distance: float
-    look_angle: float
+    look_angle_rad: float
+    look_angle_tangent: float
 
-    def __init__(self, filter_flags: Union[TrajFlag, int], range_step: float,
+    def __init__(self, props: ShotProps, filter_flags: Union[TrajFlag, int], range_step: float,
                  initial_position: Vector, initial_velocity: Vector,
                  barrel_angle_rad: float, look_angle_rad: float = 0.0,
                  time_step: float = 0.0):
-        """If a time_step is indicated, then we will record a row at least that often in the trajectory"""
-        self.filter: Union[TrajFlag, int] = filter_flags
-        self.current_flag: Union[TrajFlag, int] = TrajFlag.NONE
-        self.seen_zero: Union[TrajFlag, int] = TrajFlag.NONE
-        self.time_step: float = time_step
-        self.range_step: float = range_step
-        self.time_of_last_record: float = 0.0
-        self.next_record_distance: float = 0.0
-        self.previous_mach: float = 0.0
-        self.previous_time: float = 0.0
-        self.previous_position: Vector = initial_position
-        self.previous_velocity: Vector = initial_velocity
-        self.previous_v_mach: float = 0.0  # Previous velocity in Mach terms
-        self.look_angle: float = look_angle_rad
+        """If a time_step > 0, then we will record a row at least that often in the trajectory"""
+        self.props = props
+        self.filter = filter_flags
+        self.seen_zero = TrajFlag.NONE
+        self.time_step = time_step
+        self.range_step = range_step
+        self.time_of_last_record = 0.0
+        self.next_record_distance = 0.0
+        self.prev_data = None
+        self.prev_prev_data = None
+        self.look_angle_rad = look_angle_rad
+        self.look_angle_tangent = math.tan(look_angle_rad)
+        if self.filter & TrajFlag.MACH:
+            mach = props.get_density_and_mach_for_altitude(initial_position.y)[1]
+            if initial_velocity.magnitude() < mach:
+                # If we start below Mach 1, we won't look for Mach crossings
+                self.filter &= ~TrajFlag.MACH
         if self.filter & TrajFlag.ZERO:
+            # Especially with non-zero look_angle, rounding can suggest multiple adjacent zero-crossings;
+            #   self.seen_zero prevents recording more than one.
             if initial_position.y >= 0:
-                self.seen_zero |= TrajFlag.ZERO_UP
-            elif initial_position.y < 0 and barrel_angle_rad < self.look_angle:
-                self.seen_zero |= TrajFlag.ZERO_DOWN
+                # If shot starts above zero then we will only look for a ZERO_DOWN crossing through the line of sight.
+                self.filter &= ~TrajFlag.ZERO_UP
+            elif initial_position.y < 0 and barrel_angle_rad <= self.look_angle_rad:
+                # If shot starts below zero and barrel points below line of sight we won't look for any crossings.
+                self.filter &= ~(TrajFlag.ZERO | TrajFlag.MRT)
 
     # pylint: disable=too-many-positional-arguments
-    def should_record(self, position: Vector, velocity: Vector, mach: float,
-                      time: float) -> Optional[BaseTrajData]:
-        self.current_flag = TrajFlag.NONE
-        data = None
-        if (self.range_step > 0) and (position.x >= self.next_record_distance):
-            while self.next_record_distance + self.range_step < position.x:
-                # Handle case where we have stepped past more than one record distance
-                self.next_record_distance += self.range_step
-            if position.x > self.previous_position.x:
-                # Interpolate to get BaseTrajData at the record distance
-                ratio = (self.next_record_distance - self.previous_position.x) / (
-                        position.x - self.previous_position.x)
-                data = BaseTrajData(
-                    time=self.previous_time + (time - self.previous_time) * ratio,
-                    position=self.previous_position + (  # type: ignore[operator]
-                            position - self.previous_position) * ratio,
-                    velocity=self.previous_velocity + (  # type: ignore[operator]
-                            velocity - self.previous_velocity) * ratio,
-                    mach=self.previous_mach + (mach - self.previous_mach) * ratio
-                )
-            self.current_flag |= TrajFlag.RANGE
-            self.next_record_distance += self.range_step
-            self.time_of_last_record = time
-        elif self.time_step > 0:
-            self.check_next_time(time)
-        if self.filter & TrajFlag.ZERO:
-            self.check_zero_crossing(position)
-        if self.filter & TrajFlag.MACH:
-            self.check_mach_crossing(velocity.magnitude(), mach)
-        if self.filter & TrajFlag.APEX:
-            self.check_apex(velocity)
-        if (bool(self.current_flag & self.filter) and data is None) or time==0.0:
-            data = BaseTrajData(time=time, position=position,
-                                velocity=velocity, mach=mach)
-        self.previous_time = time
-        self.previous_position = position
-        self.previous_velocity = velocity
-        self.previous_mach = mach
-        return data
+    def record(self, new_data: BaseTrajData) -> List[TrajectoryData]:
+        """For each integration step, creates TrajectoryData records based on filter/step criteria."""
+        rows: List[Tuple[BaseTrajData, Union[TrajFlag, int]]] = []
+        def add_row(data: BaseTrajData, flag: Union[TrajFlag, int]):
+            """Add data, keeping `rows` sorted by time."""
+            idx = bisect_left_key(rows, data.time, key=lambda r: r[0].time)
+            if idx < len(rows):
+                # If we match existing row's time then just add this flag to the row
+                if abs(rows[idx][0].time - data.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
+                    rows[idx] = (rows[idx][0], rows[idx][1] | flag)
+                    return
+                if idx > 0 and abs(rows[idx - 1][0].time - data.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
+                    rows[idx - 1] = (rows[idx - 1][0], rows[idx - 1][1] | flag)
+                    return
+            rows.insert(idx, (data, flag))  # Insert at sorted position
 
-    def check_next_time(self, time: float):
-        if time > self.time_of_last_record + self.time_step:
-            self.current_flag |= TrajFlag.RANGE
-            self.time_of_last_record = time
+        if new_data.time == 0.0:
+            # Always record starting point
+            add_row(new_data, TrajFlag.RANGE if self.range_step > 0 else TrajFlag.NONE)
+        else:
+            #region RANGE steps
+            if self.range_step > 0:
+                while self.next_record_distance + self.range_step <= new_data.position.x:
+                    new_row = None
+                    self.next_record_distance += self.range_step
+                    if abs(self.next_record_distance - new_data.position.x) < self.EPSILON:
+                        new_row = new_data
+                    elif self.prev_data is not None and self.prev_prev_data is not None:
+                        new_row = BaseTrajData.interpolate('position.x', self.next_record_distance,
+                                                            self.prev_prev_data, self.prev_data, new_data)
+                    if new_row is not None:
+                        add_row(new_row, TrajFlag.RANGE)
+                        self.time_of_last_record = new_row.time
+            #endregion RANGE steps
+            #region Time steps
+            if self.time_step > 0 and self.prev_data is not None and self.prev_prev_data is not None:
+                while self.time_of_last_record + self.time_step <= new_data.time:
+                    self.time_of_last_record += self.time_step
+                    new_row = BaseTrajData.interpolate('time', self.time_of_last_record,
+                                                        self.prev_prev_data, self.prev_data, new_data)
+                    add_row(new_row, TrajFlag.RANGE)
+            #endregion Time steps
+            if (self.filter & TrajFlag.APEX and self.prev_data is not None and self.prev_prev_data is not None
+                                            and self.prev_data.velocity.y > 0 and new_data.velocity.y <= 0):
+                # "Apex" is the point where the vertical component of velocity goes from positive to negative.
+                new_row = BaseTrajData.interpolate('velocity.y', 0.0, self.prev_prev_data, self.prev_data, new_data)
+                add_row(new_row, TrajFlag.APEX)
+                self.filter &= ~TrajFlag.APEX  # Don't look for more apices
 
-    def check_mach_crossing(self, velocity: float, mach: float):
-        current_v_mach = velocity / mach
-        if self.previous_v_mach > 1 >= current_v_mach:  # (velocity / mach <= 1) and (previous_mach > 1)
-            self.current_flag |= TrajFlag.MACH
-        self.previous_v_mach = current_v_mach
+        results = [TrajectoryData.from_base_data(self.props, data, flag) for data, flag in rows]
 
-    def check_zero_crossing(self, range_vector: Vector):
-        # Especially with non-zero look_angle, rounding can suggest multiple adjacent zero-crossings
-        #   self.seen_zero prevents recording more than one.
-        if range_vector.x > 0:
-            # Zero reference line is the sight line defined by look_angle
-            reference_height = range_vector.x * math.tan(self.look_angle)
-            # If we haven't seen ZERO_UP, we look for that first
-            if not (self.seen_zero & TrajFlag.ZERO_UP):  # pylint: disable=superfluous-parens
-                if range_vector.y >= reference_height:
-                    self.current_flag |= TrajFlag.ZERO_UP
-                    self.seen_zero |= TrajFlag.ZERO_UP
-            # We've crossed above sight line; now look for crossing back through it
-            elif not (self.seen_zero & TrajFlag.ZERO_DOWN):  # pylint: disable=superfluous-parens
-                if range_vector.y < reference_height:
-                    self.current_flag |= TrajFlag.ZERO_DOWN
-                    self.seen_zero |= TrajFlag.ZERO_DOWN
+        #region Points that must be interpolated on TrajectoryData instances
+        if self.prev_data is not None and self.prev_prev_data is not None:
+            compute_flags = TrajFlag.NONE
+            if (self.filter & TrajFlag.MACH and self.prev_data is not None
+                and new_data.velocity.magnitude() < new_data.mach):
+                compute_flags |= TrajFlag.MACH
+                self.filter &= ~TrajFlag.MACH  # Don't look for more Mach crossings
+            #region ZERO checks (done on TrajectoryData objects so we can interpolate for .slant_height)
+            if self.filter & TrajFlag.ZERO:
+                # Zero reference line is the sight line defined by look_angle
+                reference_height = new_data.position.x * self.look_angle_tangent
+                # If we haven't seen ZERO_UP, we look for that first
+                if self.filter & TrajFlag.ZERO_UP:
+                    if new_data.position.y >= reference_height:
+                        compute_flags |= TrajFlag.ZERO_UP
+                        self.filter &= ~TrajFlag.ZERO_UP
+                # We've crossed above sight line; now look for crossing back through it
+                elif self.filter & TrajFlag.ZERO_DOWN:
+                    if new_data.position.y < reference_height:
+                        compute_flags |= TrajFlag.ZERO_DOWN
+                        self.filter &= ~TrajFlag.ZERO_DOWN
+            #endregion ZERO checks
+            if compute_flags:
+                # Instantiate TrajectoryData and interpolate
+                t0 = TrajectoryData.from_base_data(self.props, new_data)
+                t1 = TrajectoryData.from_base_data(self.props, self.prev_data)
+                t2 = TrajectoryData.from_base_data(self.props, self.prev_prev_data)
+                add_td = []
+                if compute_flags & TrajFlag.MACH:
+                    add_td.append(TrajectoryData.interpolate('mach', 1.0, t0, t1, t2, TrajFlag.MACH))
+                    compute_flags &= ~TrajFlag.MACH
+                if compute_flags & TrajFlag.ZERO:
+                    add_td.append(TrajectoryData.interpolate('slant_height', 0.0, t0, t1, t2, compute_flags))
+                for td in add_td:  # Add TrajectoryData, keeping `results` sorted by time.                    
+                    idx = bisect_left_key(results, td.time, key=lambda r: r.time)
+                    if idx < len(results):  # If we match existing row's time then just add this flag to the row                        
+                        if abs(results[idx].time - td.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
+                            results[idx] = td._replace(flag = results[idx].flag | td.flag)
+                            continue
+                        elif idx > 0 and abs(results[idx - 1].time - td.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
+                            results[idx - 1] = td._replace(flag = results[idx - 1].flag | td.flag)
+                            continue
+                    results.insert(idx, td)  # Insert at sorted position
+        #endregion
 
-    def check_apex(self, velocity_vector: Vector):
-        """
-        The apex is defined as the point, after launch, where the vertical component of velocity
-            goes from positive to negative.
-        """
-        if velocity_vector.y <= 0 and self.previous_velocity.y > 0:
-            self.current_flag |= TrajFlag.APEX
+        self.prev_prev_data = self.prev_data
+        self.prev_data = new_data
+        return results
 
 
 class _WindSock:
@@ -781,7 +812,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             range_step_ft = range_limit_ft
         else:
             range_step_ft = dist_step >> Distance.Foot
-        return self._integrate(props, range_limit_ft, range_step_ft, time_step, filter_flags, dense_output)
+        return self._integrate(props, range_limit_ft, range_step_ft, time_step, filter_flags, dense_output, **kwargs)
 
     @abstractmethod
     def _integrate(self, props: ShotProps, range_limit_ft: float, range_step_ft: float,

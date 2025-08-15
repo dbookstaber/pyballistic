@@ -177,10 +177,6 @@ def hit_result_as_plot(hit_result, look_angle: Optional[Angular] = None,
     :param show_time_axis: whether time of flight axis should be added to plot
     :return: graph of the trajectory
     """
-    if not hit_result.extra:
-        warnings.warn("HitResult.plot: To show extended data"
-                      "Use Calculator.fire(..., extra_data=True)")
-
     ax = trajectory_as_plot(hit_result, look_angle)
 
     font_size = PLOT_FONT_SIZE
@@ -233,6 +229,6 @@ def hit_result_as_plot(hit_result, look_angle: Optional[Angular] = None,
         if not backward_bending_trajectory:
             add_time_of_flight_axis(ax, hit_result)
         else:
-            warnings.warn("The trajectory is backward bending. Please add custom time visualization if needed")
+            warnings.warn("Trajectory bends backward; suppressing time axis.")
 
     return ax

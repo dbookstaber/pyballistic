@@ -178,7 +178,6 @@ __all__ = [
     'calculate_ogw',
     'get_correction',
     'create_trajectory_row',
-    'make_trajectory_row',
     'calculate_curve',
     'CurvePoint',
     'exceptions',

@@ -11,7 +11,7 @@ from py_ballisticcalc.engines.base_engine import (
 )
 from py_ballisticcalc.exceptions import RangeError
 from py_ballisticcalc.logger import logger
-from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag, ShotProps, HitResult, make_trajectory_row
+from py_ballisticcalc.trajectory_data import BaseTrajData, TrajectoryData, TrajFlag, ShotProps, HitResult
 from py_ballisticcalc.vector import Vector
 
 __all__ = ('RK4IntegrationEngine',)
@@ -58,6 +58,7 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         _cMinimumAltitude = self._config.cMinimumAltitude
 
         ranges: List[TrajectoryData] = []  # Record of TrajectoryData points to return
+        step_data: List[BaseTrajData] = []  # Data for interpolation (if dense_output is enabled)
         time: float = .0
         mach: float = .0
         density_ratio: float = .0
@@ -78,7 +79,7 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         ).mul_by_const(velocity)  # type: ignore
         # endregion
 
-        data_filter = _TrajectoryDataFilter(filter_flags=filter_flags, range_step=range_step_ft,
+        data_filter = _TrajectoryDataFilter(props=props, filter_flags=filter_flags, range_step=range_step_ft,
                                             initial_position=range_vector, initial_velocity=velocity_vector,
                                             barrel_angle_rad=props.barrel_elevation_rad,
                                             look_angle_rad=props.look_angle_rad,
@@ -102,10 +103,11 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
             density_ratio, mach = props.get_density_and_mach_for_altitude(range_vector.y)
 
             # region Check whether to record TrajectoryData row at current point
-            if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
-                ranges.append(make_trajectory_row(
-                    props, data.time, data.position, data.velocity, data.mach, data_filter.current_flag)
-                )
+            data = BaseTrajData(time=time, position=range_vector, velocity=velocity_vector, mach=mach)
+            if dense_output:
+                step_data.append(data)
+            if len(rows := data_filter.record(data)) > 0:
+                ranges.extend(rows)
                 last_recorded_range = data.position.x
             # endregion
 
@@ -154,21 +156,22 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
                     termination_reason = RangeError.MinimumAltitudeReached
                 break
         # endregion Trajectory Loop
-        if (data := data_filter.should_record(range_vector, velocity_vector, mach, time)) is not None:
-            ranges.append(make_trajectory_row(
-                props, data.time, data.position, data.velocity, data.mach, data_filter.current_flag)
-            )
+        data = BaseTrajData(time=time, position=range_vector, velocity=velocity_vector, mach=mach)
+        if dense_output:
+            step_data.append(data)
+        if len(rows := data_filter.record(data)) > 0:
+            ranges.extend(rows)
         # Ensure that we have at least two data points in trajectory,
         # ... as well as last point if we had an incomplete trajectory
         if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
             if len(ranges) > 0 and ranges[-1].time == time:  # But don't duplicate the last point.
                 pass
             else:
-                ranges.append(make_trajectory_row(
+                ranges.append(TrajectoryData.from_props(
                     props, time, range_vector, velocity_vector, mach, TrajFlag.NONE)
                 )
         logger.debug(f"RK4 ran {self.integration_step_count - start_integration_step_count} iterations")
         error = None
         if termination_reason is not None:
             error = RangeError(termination_reason, ranges)
-        return HitResult(props, ranges, filter_flags > 0, error)
+        return HitResult(props, ranges, step_data, filter_flags > 0, error)
