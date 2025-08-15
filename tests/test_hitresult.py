@@ -17,7 +17,7 @@ class TestDangerSpace:
         self.calc = Calculator(engine=loaded_engine_instance)
         self.calc.set_weapon_zero(self.shot, Distance.Foot(300))
         self.shot_result = self.calc.fire(self.shot, trajectory_range=Distance.Yard(1000),
-                                          trajectory_step=Distance.Yard(10), extra_data=True)
+                                          trajectory_step=Distance.Yard(10), flags=TrajFlag.ALL)
 
     def test_flags(self):
         zero_up = self.shot_result.flag(TrajFlag.ZERO_UP)
@@ -56,23 +56,7 @@ class TestDangerSpace:
         self.shot.look_angle = Angular.Degree(10)
         self.shot.relative_angle = Angular.Degree(2)
         high_shot_result = self.calc.fire(self.shot, trajectory_range=Distance.Yard(300),
-                                      trajectory_step=Distance.Yard(10), extra_data=True)
+                                          trajectory_step=Distance.Yard(10), flags=TrajFlag.ALL)
         danger_space = high_shot_result.danger_space(Distance.Yard(100), Distance.Yard(1))
         assert pytest.approx(danger_space.begin.slant_distance >> Distance.Yard, abs=0.5) == 85.6
         assert pytest.approx(danger_space.end.slant_distance >> Distance.Yard, abs=0.5) == 114.5
-
-    # def test_flags(self):
-    #     """With extra_data=True, the trajectory should include points for ZERO and MACH crossings."""
-    #     seen_zero_up = False
-    #     seen_zero_down = False
-    #     seen_mach = False
-    #     for p in self.shot_result.trajectory:
-    #         if TrajFlag(p.flag) & TrajFlag.ZERO_UP:
-    #             seen_zero_up = True
-    #         if TrajFlag(p.flag) & TrajFlag.ZERO_DOWN:
-    #             seen_zero_down = True
-    #         if TrajFlag(p.flag) & TrajFlag.MACH:
-    #             seen_mach = True
-    #     assert seen_zero_up, "ZERO_UP flag not found in trajectory"
-    #     assert seen_zero_down, "ZERO_DOWN flag not found in trajectory"
-    #     assert seen_mach, "MACH flag not found in trajectory"

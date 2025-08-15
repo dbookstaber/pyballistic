@@ -29,12 +29,13 @@ __all__ = (
     '_WindSock',
     '_ZeroCalcStatus',
     'with_no_minimum_velocity',
+    'with_max_drop_zero',
 )
 
 cZeroFindingAccuracy: float = 0.000005  # Max allowed slant-error in feet to end zero search
 cMaxIterations: int = 40  # maximum number of iterations for zero search
 cMinimumAltitude: float = -1500  # feet, below sea level
-cMaximumDrop: float = -15000  # feet, maximum drop from the muzzle to continue trajectory
+cMaximumDrop: float = -10000  # feet, maximum drop from the muzzle to continue trajectory
 cMinimumVelocity: float = 50.0  # fps, minimum velocity to continue trajectory
 cGravityConstant: float = -32.17405  # feet per second squared
 cStepMultiplier: float = 1.0  # Multiplier for engine's default step, for changing integration speed & precision
@@ -141,7 +142,7 @@ class _TrajectoryDataFilter:
 
         if new_data.time == 0.0:
             # Always record starting point
-            add_row(new_data, TrajFlag.RANGE if self.range_step > 0 else TrajFlag.NONE)
+            add_row(new_data, TrajFlag.RANGE if (self.range_step > 0 or self.time_step > 0) else TrajFlag.NONE)
         else:
             #region RANGE steps
             if self.range_step > 0:
@@ -308,6 +309,7 @@ class ZeroFindingProps(NamedTuple):
 
 
 def with_no_minimum_velocity(method):
+    """Decorator to temporarily set minimum velocity to zero."""
     def wrapper(self, *args, **kwargs):
         restore = None
         if getattr(self._config, "cMinimumVelocity", None) != 0:
@@ -318,6 +320,20 @@ def with_no_minimum_velocity(method):
         finally:
             if restore is not None:
                 self._config.cMinimumVelocity = restore
+    return wrapper
+
+def with_max_drop_zero(method):
+    """Decorator to temporarily set maximum drop to zero."""
+    def wrapper(self, *args, **kwargs):
+        restore = None
+        if getattr(self._config, "cMaximumDrop", None) != 0:
+            restore = self._config.cMaximumDrop
+            self._config.cMaximumDrop = 0
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            if restore is not None:
+                self._config.cMaximumDrop = restore
     return wrapper
 
 
@@ -381,6 +397,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_max_range(props, angle_bracket_deg)
 
+    @with_max_drop_zero
     @with_no_minimum_velocity
     def _find_max_range(self, props: ShotProps, angle_bracket_deg: Tuple[float, float] = (0, 90)) -> Tuple[
         Distance, Angular]:
@@ -397,11 +414,6 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
 
         Raises:
             ValueError: If the angle bracket excludes the look_angle.
-
-        TODO: Presently this only (barely) works for horizontal look-angle because:
-                1. We have no way to stop integrator when it hits ZERO_DOWN, and
-                2. Integrator doesn't interpolate for that flag value.
-            Here what we get is the distance of the first point computed by integrator after return to horizontal.
         """
         # region Virtually vertical shot
         if abs(props.look_angle_rad - math.radians(90)) < self.APEX_IS_MAX_RANGE_RADIANS:
@@ -409,27 +421,24 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             return max_range, Angular.Radian(props.look_angle_rad)
         # endregion Virtually vertical shot
 
-        if props.look_angle_rad > 0:
-            warnings.warn("Code does not yet support non-horizontal look angles.", UserWarning)
-
-        restore_cMaximumDrop = None
-        if self._config.cMaximumDrop:
-            restore_cMaximumDrop = self._config.cMaximumDrop
-            self._config.cMaximumDrop = 0  # We want to run trajectory until it returns to horizontal
-
         t_calls = 0
         cache: Dict[float, float] = {}
 
         def range_for_angle(angle_rad: float) -> float:
-            """Horizontal range to zero (in feet) for given launch angle in radians."""
+            """Returns slant-distance minus slant-error (in feet) for given launch angle in radians."""
             if angle_rad in cache:
                 return cache[angle_rad]
             props.barrel_elevation_rad = angle_rad
             nonlocal t_calls
             t_calls += 1
             logger.debug(f"range_for_angle call #{t_calls} for angle {math.degrees(angle_rad)} degrees")
-            t = self._integrate(props, 9e9, 9e9, filter_flags=TrajFlag.NONE)[-1]
-            cache[angle_rad] = t.distance >> Distance.Foot
+            hit = self._integrate(props, 9e9, 9e9, filter_flags=TrajFlag.ZERO_DOWN)
+            cross = hit.flag(TrajFlag.ZERO_DOWN)
+            if cross is None:
+                warnings.warn(f'No ZERO_DOWN found for launch angle {angle_rad} rad.')
+                return -9e9
+            # Return value penalizes distance by slant height, which we want to be zero.
+            cache[angle_rad] = (cross.slant_distance >> Distance.Foot) - abs(cross.slant_height >> Distance.Foot)
             return cache[angle_rad]
 
         # region Golden-section search
@@ -442,7 +451,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         yc = range_for_angle(c)
         yd = range_for_angle(d)
         for _ in range(100):  # 100 iterations is more than enough for high precision
-            if h < 1e-5:  # Angle tolerance in radians
+            if h < 1e-6:  # Angle tolerance in radians
                 break
             if yc > yd:
                 b, d, yd = d, c, yc
@@ -458,8 +467,6 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         # endregion
         max_range_ft = range_for_angle(angle_at_max_rad)
 
-        if restore_cMaximumDrop is not None:
-            self._config.cMaximumDrop = restore_cMaximumDrop
         logger.debug(f"._find_max_range required {t_calls} trajectory calculations")
         return Distance.Feet(max_range_ft), Angular.Radian(angle_at_max_rad)
 
@@ -481,6 +488,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         props = self._init_trajectory(shot_info)
         return self._find_apex(props)
 
+    @with_max_drop_zero
     @with_no_minimum_velocity
     def _find_apex(self, props: ShotProps) -> TrajectoryData:
         """

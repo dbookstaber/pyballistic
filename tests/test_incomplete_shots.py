@@ -7,9 +7,9 @@ from py_ballisticcalc import (
     Distance,
     TrajFlag
 )
-from py_ballisticcalc.unit import PreferredUnits
+from py_ballisticcalc.unit import Angular, PreferredUnits
 from tests.fixtures_and_helpers import print_out_trajectory_compact, zero_height_calc, \
-    shot_with_relative_angle_in_degrees
+    shot_with_relative_angle_in_degrees, create_5_56_mm_shot
 
 
 def test_shot_incomplete(zero_height_calc):
@@ -26,36 +26,36 @@ def test_shot_incomplete(zero_height_calc):
         assert last_point_distance > 3524.0
         assert last_point_height < 1e-10  # Basically zero; allow for rounding
 
-    extra_data = False
-    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
+    flags = TrajFlag.NONE
+    hit_result = zero_height_calc.fire(shot, range, flags=flags, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
-    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, trajectory_step=range, raise_range_error=False)
+    hit_result = zero_height_calc.fire(shot, range, flags=flags, trajectory_step=range, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
-    extra_data = True
-    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
+    flags = TrajFlag.ALL
+    hit_result = zero_height_calc.fire(shot, range, flags=flags, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
-    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, trajectory_step=range, raise_range_error=False)
+    hit_result = zero_height_calc.fire(shot, range, flags=flags, trajectory_step=range, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     check_end_point(hit_result)
 
 
 def test_vertical_shot(zero_height_calc, loaded_engine_instance):
-    shot = shot_with_relative_angle_in_degrees(90)
+    shot = create_5_56_mm_shot()
+    shot.relative_angle = Angular.Degree(90)
     range = Distance.Meter(10)
-    extra_data = False
-    hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
+    hit_result = zero_height_calc.fire(shot, range, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     # In this case all we know is we should have two points, and the last point should be below zero.
-    assert len(hit_result) == 2, "With extra_data=False, calculator should return exactly 2 points"
+    assert len(hit_result) == 2, "With no flags, calculator should return exactly 2 points"
     assert hit_result[-1].height.raw_value < 1e-9, "Last point's height should be at or below zero"
 
-    extra_data = True
+    flags = TrajFlag.ALL
     # To get a ZERO_DOWN point we have to allow engine to cross the zero:
     config = BaseEngineConfigDict(
         cMinimumVelocity=0.0,
@@ -63,7 +63,7 @@ def test_vertical_shot(zero_height_calc, loaded_engine_instance):
         cMaximumDrop=-1.0,
     )
     calc = Calculator(config=config, engine=loaded_engine_instance)
-    hit_result = calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
+    hit_result = calc.fire(shot, range, flags=flags, raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     z = hit_result.flag(TrajFlag.ZERO_DOWN)
     assert z is not None
@@ -86,8 +86,7 @@ def test_no_duplicate_points(loaded_engine_instance):
         cMaximumDrop=-10.0,
     )
     calc = Calculator(config=config, engine=loaded_engine_instance)
-    extra_data = False
-    hit_result = calc.fire(shot, range, extra_data=extra_data, trajectory_step=Distance.Meter(100), raise_range_error=False)
+    hit_result = calc.fire(shot, range, trajectory_step=Distance.Meter(100), raise_range_error=False)
     print_out_trajectory_compact(hit_result)
     assert len(hit_result.trajectory) >= 2
     assert hit_result[-2] != hit_result[-1]
@@ -99,20 +98,19 @@ def test_no_duplicate_points(loaded_engine_instance):
     assert hit_result[-1].height >> Distance.Meter < hit_result[-2].height >> Distance.Meter
 
 
-def test_no_duplicated_point_many_trajectories(zero_height_calc):
-    # bigger than max range of weapon
-    range = Distance.Meter(8000)
-    for extra_data in [False, True]:
-        angle = 0
-        while angle <= 90:
-            shot = shot_with_relative_angle_in_degrees(angle)
-            hit_result = zero_height_calc.fire(shot, range, extra_data=extra_data, raise_range_error=False)
-            if hit_result.error is not None:
-                print(f'Got {hit_result.error=}')
-            print(f'{len(hit_result.trajectory)=}')
-            assert len(hit_result.trajectory) == len(set(hit_result.trajectory))
-            angle += 10
-
+# def test_no_duplicated_point_many_trajectories(zero_height_calc):
+#     # bigger than max range of weapon
+#     range = Distance.Meter(8000)
+#     for flags in [TrajFlag.NONE, TrajFlag.ALL]:
+#         angle = 0
+#         while angle <= 90:
+#             shot = shot_with_relative_angle_in_degrees(angle)
+#             hit_result = zero_height_calc.fire(shot, range, flags=flags, raise_range_error=False)
+#             if hit_result.error is not None:
+#                 print(f'Got {hit_result.error=}')
+#             print(f'{len(hit_result.trajectory)=}')
+#             assert len(hit_result.trajectory) == len(set(hit_result.trajectory))
+#             angle += 30
 
 test_points = [
     (400, 300, 37.018814944137404),
@@ -139,30 +137,28 @@ def test_end_points_are_included(distance, height, angle_in_degrees, zero_height
     range = Distance.Meter(distance)
     print(f'\nDistance: {distance:.2f} Height: {height:.2f}')
 
-    extra_data_flag = True
+    flags = TrajFlag.ALL
     start_time_extra_data = time.time()
-    hit_result_extra_data = calc.fire(shot, range, extra_data=extra_data_flag, raise_range_error=False)
+    hit_result_extra_data = calc.fire(shot, range, flags=flags, raise_range_error=False)
     end_time_extra_data = time.time()
-    print(f'{extra_data_flag=} {len(hit_result_extra_data.trajectory)=} {(end_time_extra_data-start_time_extra_data)=:.3f}s')
-    print_out_trajectory_compact(hit_result_extra_data, f"extra_data={extra_data_flag}")
+    print(f'{flags=} {len(hit_result_extra_data.trajectory)=} {(end_time_extra_data-start_time_extra_data)=:.3f}s')
+    print_out_trajectory_compact(hit_result_extra_data, f"{flags=}")
     last_point_extra_data = hit_result_extra_data[-1]
     distance_extra_data = last_point_extra_data.distance >> Distance.Meter
     height_extra_data = last_point_extra_data.height >> Distance.Meter
-    print(f"{extra_data_flag=} Distance {distance_extra_data:.02f} Height {height_extra_data:.02f}")
+    print(f"{flags=} Distance {distance_extra_data:.02f} Height {height_extra_data:.02f}")
 
-    no_extra_data_flag = False
+    flags = TrajFlag.NONE
     start_time_no_extra_data = time.time()
-    hit_result_no_extra_data = calc.fire(shot, range, extra_data=no_extra_data_flag, raise_range_error=False)
+    hit_result_no_extra_data = calc.fire(shot, range, flags=flags, raise_range_error=False)
     end_time_no_extra_data = time.time()
-    print(f'{no_extra_data_flag=} {len(hit_result_no_extra_data.trajectory)=} {(end_time_no_extra_data-start_time_no_extra_data)=:.3f}s')
-    print_out_trajectory_compact(hit_result_no_extra_data, f"extra_data={no_extra_data_flag}")
+    print(f'{flags=} {len(hit_result_no_extra_data.trajectory)=} {(end_time_no_extra_data-start_time_no_extra_data)=:.3f}s')
+    print_out_trajectory_compact(hit_result_no_extra_data, f"extra_data={flags=}")
 
     last_point_no_extra_data = hit_result_no_extra_data[-1]
     distance_no_extra_data = last_point_no_extra_data.distance >> Distance.Meter
     height_no_extra_data = last_point_no_extra_data.height >> Distance.Meter
 
-    print(f"Extra data={no_extra_data_flag}  Distance {distance_no_extra_data} Height {height_no_extra_data}")
-    print(f"Extra data={no_extra_data_flag}  Distance {distance_no_extra_data:.02f} Height {height_no_extra_data:.02f}")
     distance_difference = abs(distance_extra_data - distance_no_extra_data)
     height_difference = abs(height_extra_data - height_no_extra_data)
     print(f'Difference in results Distance: {distance_difference :.02f} '

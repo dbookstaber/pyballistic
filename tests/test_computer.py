@@ -276,6 +276,6 @@ class TestComputerPytest:
         shot = Shot(ammo=Ammo(dm, mv=Velocity.MPS(800)))
         self.calc.set_weapon_zero(shot, zero_distance=Distance.Meter(200))
         hit_result = self.calc.fire(shot, trajectory_range=Distance.Meter(300),
-                                    trajectory_step=Distance.Meter(100),extra_data=True)
+                                    trajectory_step=Distance.Meter(100), flags=TrajFlag.ALL)
         assert hit_result.flag(TrajFlag.ZERO_DOWN).flag == TrajFlag.ZERO_DOWN | TrajFlag.RANGE, \
             'ZERO_DOWN should occur on a RANGE row'
