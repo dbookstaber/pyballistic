@@ -3,7 +3,7 @@ import pytest
 from py_ballisticcalc import *
 
 
-class TestDangerSpace:
+class TestHitResult:
 
     @pytest.fixture(autouse=True)
     def setup_method(self, loaded_engine_instance) -> None:
@@ -60,3 +60,16 @@ class TestDangerSpace:
         danger_space = high_shot_result.danger_space(Distance.Yard(100), Distance.Yard(1))
         assert pytest.approx(danger_space.begin.slant_distance >> Distance.Yard, abs=0.5) == 85.6
         assert pytest.approx(danger_space.end.slant_distance >> Distance.Yard, abs=0.5) == 114.5
+
+    def test_tiny_step(self):
+        """Test that tiny range-steps are backfilled correctly"""
+        dm = DragModel(bc=0.2, drag_table=TableG7)
+        atmo = Atmo.icao()
+        _, mach = atmo.get_density_and_mach_for_altitude(0)
+        shot = Shot(ammo=Ammo(dm, mv=Velocity.FPS(mach)))
+        result = self.calc.fire(shot, trajectory_range=Distance.Meter(1),
+                            trajectory_step=Distance.Meter(0.2), flags=TrajFlag.ALL)
+        assert len(result) == 6, "Result should have 6 TrajectoryData rows"
+        expected_flags = TrajFlag.RANGE | TrajFlag.ZERO_DOWN | TrajFlag.MACH
+        assert (result[0].flag & expected_flags) == expected_flags, \
+            "First row should have RANGE, ZERO_DOWN, and MACH flags"

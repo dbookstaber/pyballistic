@@ -10,7 +10,7 @@ from typing_extensions import Union, List, override
 from py_ballisticcalc.engines.base_engine import (
     BaseEngineConfigDict,
     BaseIntegrationEngine,
-    _TrajectoryDataFilter,
+    TrajectoryDataFilter,
     _WindSock,
 )
 from py_ballisticcalc.exceptions import RangeError
@@ -63,7 +63,6 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         _cMaximumDrop = -abs(self._config.cMaximumDrop)  # Ensure it's negative
         _cMinimumAltitude = self._config.cMinimumAltitude
 
-        ranges: List[TrajectoryData] = []  # Record of TrajectoryData points to return
         step_data: List[BaseTrajData] = []  # Data for interpolation (if dense_output is enabled)
         time: float = .0
         drag: float = .0
@@ -86,20 +85,19 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         ).mul_by_const(velocity)  # type: ignore
         # endregion
 
-        data_filter = _TrajectoryDataFilter(props=props, filter_flags=filter_flags, range_step=range_step_ft,
-                                            initial_position=range_vector, initial_velocity=velocity_vector,
-                                            barrel_angle_rad=props.barrel_elevation_rad,
-                                            look_angle_rad=props.look_angle_rad,
-                                            time_step=time_step)
+        data_filter = TrajectoryDataFilter(props=props, filter_flags=filter_flags,
+                                    initial_position=range_vector, initial_velocity=velocity_vector,
+                                    barrel_angle_rad=props.barrel_elevation_rad, look_angle_rad=props.look_angle_rad,
+                                    range_limit=range_limit_ft, range_step=range_step_ft, time_step=time_step
+        )
 
         # region Trajectory Loop
         warnings.simplefilter("once")  # used to avoid multiple warnings in a loop
         termination_reason = None
-        last_recorded_range = 0.0
-        start_integration_step_count = self.integration_step_count
-        while (range_vector.x <= range_limit_ft) or (
-                last_recorded_range <= range_limit_ft - 1e-6):
-            self.integration_step_count += 1
+        integration_step_count = 0
+        # Quadratic interpolation requires 3 points, so we will need at least 3 steps
+        while (range_vector.x <= range_limit_ft) or integration_step_count < 3:
+            integration_step_count += 1
 
             # Update wind reading at current point in trajectory
             if range_vector.x >= wind_sock.next_range:  # require check before call to improve performance
@@ -108,13 +106,11 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
             # Update air density at current point in trajectory
             density_ratio, mach = props.get_density_and_mach_for_altitude(range_vector.y)
 
-            # region Check whether to record TrajectoryData row at current point
+            # region Record current step
             data = BaseTrajData(time=time, position=range_vector, velocity=velocity_vector, mach=mach)
+            data_filter.record(data)
             if dense_output:
                 step_data.append(data)
-            if len(rows := data_filter.record(data)) > 0:
-                ranges.extend(rows)
-                last_recorded_range = data.position.x
             # endregion
 
             # region Ballistic calculation step (point-mass)
@@ -148,12 +144,12 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
                 break
         # endregion
         data = BaseTrajData(time=time, position=range_vector, velocity=velocity_vector, mach=mach)
+        data_filter.record(data)
         if dense_output:
             step_data.append(data)
-        if len(rows := data_filter.record(data)) > 0:
-            ranges.extend(rows)
         # Ensure that we have at least two data points in trajectory,
         # ... as well as last point if we had an incomplete trajectory
+        ranges = data_filter.records
         if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
             if len(ranges) > 0 and ranges[-1].time == time:  # But don't duplicate the last point.
                 pass
@@ -161,7 +157,8 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
                 ranges.append(TrajectoryData.from_props(
                     props, time, range_vector, velocity_vector, mach, TrajFlag.NONE)
                 )
-        logger.debug(f"Euler ran {self.integration_step_count - start_integration_step_count} iterations")
+        logger.debug(f"Euler ran {integration_step_count} iterations")
+        self.integration_step_count += integration_step_count
         error = None
         if termination_reason is not None:
             error = RangeError(termination_reason, ranges)

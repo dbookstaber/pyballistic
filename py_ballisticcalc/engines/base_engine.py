@@ -25,7 +25,7 @@ __all__ = (
     'BaseEngineConfigDict',
     'DEFAULT_BASE_ENGINE_CONFIG',
     'BaseIntegrationEngine',
-    '_TrajectoryDataFilter',
+    'TrajectoryDataFilter',
     '_WindSock',
     '_ZeroCalcStatus',
     'with_no_minimum_velocity',
@@ -72,13 +72,14 @@ def create_base_engine_config(interface_config: Optional[BaseEngineConfigDict] =
     return BaseEngineConfig(**config)
 
 
-class _TrajectoryDataFilter:
+class TrajectoryDataFilter:
     """
     Determines when to record TrajectoryData rows based on TrajFlags and attribute steps.
     Interpolates for requested points.
     Assumes that .record will be called sequentially across the trajectory.
     """
-    EPSILON = 1e-6  # Float difference considered significant enough to justify interpolation
+    EPSILON = 1e-6  # Range difference (in feet) significant enough to justify interpolation for data
+    records: List[TrajectoryData] = []
     props: ShotProps
     filter: Union[TrajFlag, int]
     current_flag: Union[TrajFlag, int]
@@ -86,22 +87,25 @@ class _TrajectoryDataFilter:
     time_of_last_record: float
     time_step: float
     range_step: float
+    range_limit: float
     prev_data: Optional[BaseTrajData]
     prev_prev_data: Optional[BaseTrajData]
     next_record_distance: float
     look_angle_rad: float
     look_angle_tangent: float
 
-    def __init__(self, props: ShotProps, filter_flags: Union[TrajFlag, int], range_step: float,
+    def __init__(self, props: ShotProps, filter_flags: Union[TrajFlag, int],
                  initial_position: Vector, initial_velocity: Vector,
                  barrel_angle_rad: float, look_angle_rad: float = 0.0,
-                 time_step: float = 0.0):
+                 range_limit: float = 0.0, range_step: float = 0.0, time_step: float = 0.0):
         """If a time_step > 0, then we will record a row at least that often in the trajectory"""
+        self.records = []
         self.props = props
         self.filter = filter_flags
         self.seen_zero = TrajFlag.NONE
         self.time_step = time_step
         self.range_step = range_step
+        self.range_limit = range_limit
         self.time_of_last_record = 0.0
         self.next_record_distance = 0.0
         self.prev_data = None
@@ -114,8 +118,6 @@ class _TrajectoryDataFilter:
                 # If we start below Mach 1, we won't look for Mach crossings
                 self.filter &= ~TrajFlag.MACH
         if self.filter & TrajFlag.ZERO:
-            # Especially with non-zero look_angle, rounding can suggest multiple adjacent zero-crossings;
-            #   self.seen_zero prevents recording more than one.
             if initial_position.y >= 0:
                 # If shot starts above zero then we will only look for a ZERO_DOWN crossing through the line of sight.
                 self.filter &= ~TrajFlag.ZERO_UP
@@ -123,8 +125,7 @@ class _TrajectoryDataFilter:
                 # If shot starts below zero and barrel points below line of sight we won't look for any crossings.
                 self.filter &= ~(TrajFlag.ZERO | TrajFlag.MRT)
 
-    # pylint: disable=too-many-positional-arguments
-    def record(self, new_data: BaseTrajData) -> List[TrajectoryData]:
+    def record(self, new_data: BaseTrajData):
         """For each integration step, creates TrajectoryData records based on filter/step criteria."""
         rows: List[Tuple[BaseTrajData, Union[TrajFlag, int]]] = []
         def add_row(data: BaseTrajData, flag: Union[TrajFlag, int]):
@@ -148,15 +149,21 @@ class _TrajectoryDataFilter:
             if self.range_step > 0:
                 while self.next_record_distance + self.range_step <= new_data.position.x:
                     new_row = None
-                    self.next_record_distance += self.range_step
-                    if abs(self.next_record_distance - new_data.position.x) < self.EPSILON:
+                    record_distance = self.next_record_distance + self.range_step
+                    if record_distance > self.range_limit:
+                        self.range_step = -1  # Don't calculate range steps past range_limit
+                        break
+                    if abs(record_distance - new_data.position.x) < self.EPSILON:
                         new_row = new_data
                     elif self.prev_data is not None and self.prev_prev_data is not None:
-                        new_row = BaseTrajData.interpolate('position.x', self.next_record_distance,
+                        new_row = BaseTrajData.interpolate('position.x', record_distance,
                                                             self.prev_prev_data, self.prev_data, new_data)
                     if new_row is not None:
+                        self.next_record_distance += self.range_step
                         add_row(new_row, TrajFlag.RANGE)
                         self.time_of_last_record = new_row.time
+                    else:
+                        break  # Can't interpolate without previous data
             #endregion RANGE steps
             #region Time steps
             if self.time_step > 0 and self.prev_data is not None and self.prev_prev_data is not None:
@@ -173,7 +180,7 @@ class _TrajectoryDataFilter:
                 add_row(new_row, TrajFlag.APEX)
                 self.filter &= ~TrajFlag.APEX  # Don't look for more apices
 
-        results = [TrajectoryData.from_base_data(self.props, data, flag) for data, flag in rows]
+        self.records.extend([TrajectoryData.from_base_data(self.props, data, flag) for data, flag in rows])
 
         #region Points that must be interpolated on TrajectoryData instances
         if self.prev_data is not None and self.prev_prev_data is not None:
@@ -208,21 +215,19 @@ class _TrajectoryDataFilter:
                     compute_flags &= ~TrajFlag.MACH
                 if compute_flags & TrajFlag.ZERO:
                     add_td.append(TrajectoryData.interpolate('slant_height', 0.0, t0, t1, t2, compute_flags))
-                for td in add_td:  # Add TrajectoryData, keeping `results` sorted by time.                    
-                    idx = bisect_left_key(results, td.time, key=lambda r: r.time)
-                    if idx < len(results):  # If we match existing row's time then just add this flag to the row                        
-                        if abs(results[idx].time - td.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
-                            results[idx] = td._replace(flag = results[idx].flag | td.flag)
+                for td in add_td:  # Add TrajectoryData, keeping `results` sorted by time.
+                    idx = bisect_left_key(self.records, td.time, key=lambda r: r.time)
+                    if idx < len(self.records):  # If we match existing row's time then just add this flag to the row
+                        if abs(self.records[idx].time - td.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
+                            self.records[idx] = td._replace(flag=self.records[idx].flag | td.flag)
                             continue
-                        elif idx > 0 and abs(results[idx - 1].time - td.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
-                            results[idx - 1] = td._replace(flag = results[idx - 1].flag | td.flag)
+                        elif idx > 0 and abs(self.records[idx - 1].time - td.time) < BaseIntegrationEngine.SEPARATE_ROW_TIME_DELTA:
+                            self.records[idx - 1] = td._replace(flag=self.records[idx - 1].flag | td.flag)
                             continue
-                    results.insert(idx, td)  # Insert at sorted position
+                    self.records.insert(idx, td)  # Insert at sorted position
         #endregion
-
         self.prev_prev_data = self.prev_data
         self.prev_data = new_data
-        return results
 
 
 class _WindSock:
@@ -414,6 +419,8 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
 
         Raises:
             ValueError: If the angle bracket excludes the look_angle.
+
+        TODO: Check whether the cache is ever being hit
         """
         # region Virtually vertical shot
         if abs(props.look_angle_rad - math.radians(90)) < self.APEX_IS_MAX_RANGE_RADIANS:
@@ -422,11 +429,14 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         # endregion Virtually vertical shot
 
         t_calls = 0
+        cache_hits = 0
         cache: Dict[float, float] = {}
 
         def range_for_angle(angle_rad: float) -> float:
             """Returns slant-distance minus slant-error (in feet) for given launch angle in radians."""
             if angle_rad in cache:
+                nonlocal cache_hits
+                cache_hits += 1
                 return cache[angle_rad]
             props.barrel_elevation_rad = angle_rad
             nonlocal t_calls
@@ -436,9 +446,9 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             cross = hit.flag(TrajFlag.ZERO_DOWN)
             if cross is None:
                 warnings.warn(f'No ZERO_DOWN found for launch angle {angle_rad} rad.')
-                return -9e9
-            # Return value penalizes distance by slant height, which we want to be zero.
-            cache[angle_rad] = (cross.slant_distance >> Distance.Foot) - abs(cross.slant_height >> Distance.Foot)
+                cache[angle_rad] = -9e9
+            else:  # Return value penalizes distance by slant height, which we want to be zero.
+                cache[angle_rad] = (cross.slant_distance >> Distance.Foot) - abs(cross.slant_height >> Distance.Foot)
             return cache[angle_rad]
 
         # region Golden-section search
@@ -594,8 +604,9 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
 
         # 1. Find the maximum possible range to establish a search bracket.
         # TODO: In many scenarios this is unnecessarily expensive: We can confirm that the target is within
-        #      range without precisely determining the max range at the look angle, and Ridder's method on
-        #      the full interval 0-90° would be faster.
+        #      range without precisely determining the max range at the look angle, and Newton's method
+        #      started at the look-angle would be faster.  However Newton's method fails in rare cases
+        #      – see ZeroStudy.ipynb.
         max_range, angle_at_max = self._find_max_range(props)
         max_range_ft = max_range >> Distance.Foot
         angle_at_max_rad = angle_at_max >> Angular.Radian

@@ -43,7 +43,7 @@ _TrajFlagNames = {
     8: 'RANGE',
     16: 'APEX',
     31: 'ALL',
-    32: 'MRT',  # Mid-Range Trajectory (a.k.a. Maximum Ordinate): largest slant-height
+    32: 'MRT',  # Proposed: Mid-Range Trajectory (a.k.a. Maximum Ordinate) = largest slant-height
 }
 
 def lagrange_quadratic(x, x0, y0, x1, y1, x2, y2) -> float:

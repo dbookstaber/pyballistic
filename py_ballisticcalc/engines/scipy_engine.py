@@ -592,7 +592,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                     ranges.insert(idx, make_row(time, state, flag))  # Insert at sorted position
 
                 # Make sure ranges are sorted by time before this check:
-                if filter_flags & TrajFlag.MACH and ranges[0].mach > 1.0 and ranges[-1].mach < 1.0:
+                if filter_flags & TrajFlag.MACH and ranges[0].mach >= 1.0 and ranges[-1].mach < 1.0:
                     def mach_minus_one(t):
                         """Returns the Mach number at time t minus 1."""
                         state = sol.sol(t)
