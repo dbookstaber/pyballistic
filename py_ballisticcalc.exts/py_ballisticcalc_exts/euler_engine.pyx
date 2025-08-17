@@ -1,6 +1,7 @@
 from cython cimport final
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, fmin, fmax, pow
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajData, TrajectoryData
+from libc.stdlib cimport malloc, realloc, free
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajData, TrajectoryData, BaseTrajData_create
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
     ShotData_t,
@@ -23,114 +24,333 @@ from py_ballisticcalc_exts.base_engine cimport (
 
 from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
 
+# Include BaseTrajC struct definition from header file
+cdef extern from "include/basetraj_seq.h" nogil:
+    ctypedef struct BaseTrajC:
+        double time
+        double px
+        double py
+        double pz
+        double vx
+        double vy
+        double vz
+        double mach
+        
+# Access methods implemented differently to avoid Cython pointer limitations
 
 import warnings
 
 from py_ballisticcalc.exceptions import RangeError
 from py_ballisticcalc.trajectory_data import HitResult
 
-__all__ = (
-    'CythonizedEulerIntegrationEngine'
-)
+__all__ = [
+    'CythonizedEulerIntegrationEngine',
+    '_CBaseTrajSeq'
+]
+
+cdef class _CBaseTrajSeq:
+    """
+    A lightweight Python sequence wrapper that owns a contiguous C buffer of BaseTrajC structs.
+    
+    This class provides a Python-compatible sequence interface that:
+    1. Owns the allocated C buffer and frees it on deallocation
+    2. Implements __len__ and __getitem__ for sequence-like access
+    3. Lazily converts BaseTrajC structs to Python BaseTrajData objects when accessed
+    
+    Memory ownership: The _CBaseTrajSeq owns the malloc'ed buffer and frees it in __dealloc__.
+    Thread-safety: This sequence is not thread-safe (similar to Python lists).
+    """
+    cdef:
+        BaseTrajC* _buffer  # Pointer to the C buffer
+        size_t _length      # Number of elements in buffer
+        size_t _capacity    # Allocated capacity of buffer
+    
+    def __cinit__(self):
+        """
+        Initialize the sequence with an empty buffer.
+        """
+        self._buffer = <BaseTrajC*>NULL
+        self._length = <size_t>0
+        self._capacity = <size_t>0
+        
+    def __dealloc__(self):
+        """
+        Free the C buffer when the sequence is deallocated.
+        """
+        if self._buffer:
+            free(<void*>self._buffer)
+            self._buffer = <BaseTrajC*>NULL
+            
+    cdef void _ensure_capacity(self, size_t min_capacity):
+        """
+        Ensure the buffer has at least min_capacity elements.
+        Grows the buffer using realloc if needed.
+        """
+        cdef size_t new_capacity
+        cdef BaseTrajC* new_buffer
+        
+        if min_capacity > self._capacity:
+            if self._capacity > 0:
+                new_capacity = max(<size_t>min_capacity, <size_t>(self._capacity * 2))
+            else:
+                new_capacity = <size_t>16
+                
+            new_buffer = <BaseTrajC*>realloc(<void*>self._buffer, new_capacity * sizeof(BaseTrajC))
+            
+            if not new_buffer:
+                raise MemoryError("Failed to allocate memory for trajectory buffer")
+                
+            self._buffer = new_buffer
+            self._capacity = new_capacity
+        
+    cdef void append(self, double time, double px, double py, double pz, 
+                     double vx, double vy, double vz, double mach):
+        """
+        Append a new BaseTrajC entry to the buffer.
+        """
+        self._ensure_capacity(self._length + 1)
+        
+        # Use helper function to access buffer element  
+        cdef BaseTrajC* entry_ptr = <BaseTrajC*>(<char*>self._buffer + self._length * sizeof(BaseTrajC))
+        entry_ptr.time = time
+        entry_ptr.px = px
+        entry_ptr.py = py 
+        entry_ptr.pz = pz
+        entry_ptr.vx = vx
+        entry_ptr.vy = vy
+        entry_ptr.vz = vz
+        entry_ptr.mach = mach
+        
+        self._length += 1
+    
+    def __len__(self):
+        """Return the number of elements in the sequence."""
+        return self._length
+    
+    def __getitem__(self, idx):
+        """
+        Return a BaseTrajData object for the element at the given index.
+        
+        Supports negative indices like regular Python sequences.
+        Raises IndexError for out-of-bounds access.
+        """
+        # Handle negative indices
+        if idx < 0:
+            idx = <size_t>(<int>self._length + idx)
+        if idx >= self._length:
+            raise IndexError("Index out of range")
+            
+        cdef:
+            V3dT position
+            V3dT velocity
+            BaseTrajC* entry_ptr
+        
+        # Get pointer to the entry
+        entry_ptr = <BaseTrajC*>(<char*>self._buffer + <size_t>idx * sizeof(BaseTrajC))
+        
+        # Create V3dT objects for position and velocity
+        position.x = entry_ptr.px
+        position.y = entry_ptr.py
+        position.z = entry_ptr.pz
+        
+        velocity.x = entry_ptr.vx
+        velocity.y = entry_ptr.vy
+        velocity.z = entry_ptr.vz
+        
+        # Return a new BaseTrajData object constructed from the buffer element
+        return BaseTrajData_create(
+            entry_ptr.time,
+            position,
+            velocity,
+            entry_ptr.mach
+        )
 
 cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
+    """Cythonized Euler integration engine for ballistic calculations."""
+    # Match Python's EulerIntegrationEngine.DEFAULT_STEP
+    DEFAULT_STEP = 0.5
 
     cdef double get_calc_step(CythonizedEulerIntegrationEngine self):
-        return 0.5 * CythonizedBaseIntegrationEngine.get_calc_step(self)  # like super().get_calc_step()
+        """Calculate the step size for integration."""
+        return self.DEFAULT_STEP * CythonizedBaseIntegrationEngine.get_calc_step(self)
+    
+    cdef double time_step(CythonizedEulerIntegrationEngine self, double base_step, double velocity):
+        """Calculate time step based on current projectile speed."""
+        return base_step / fmax(<double>1.0, velocity)
 
     cdef object _integrate(CythonizedEulerIntegrationEngine self,
-                                 double range_limit_ft, double range_step_ft,
-                                 double time_step, int filter_flags,
-                                 bint dense_output):
+                           double range_limit_ft, double range_step_ft,
+                           double time_step, int filter_flags,
+                           bint dense_output):
+        """
+        Creates trajectory data for the specified shot using Euler integration.
+        
+        Args:
+            range_limit_ft: Maximum range in feet
+            range_step_ft: Distance step for recording points
+            time_step: Time step for recording points
+            filter_flags: Flags for special points to record
+            dense_output: Whether to include dense output for interpolation
+        
+        Returns:
+            Tuple of (list of TrajectoryData points, optional error) or
+            (_CBaseTrajSeq, optional error) if dense_output is True
+        """
         cdef:
-            double velocity, delta_time
-            double density_ratio = 0.0
-            double mach = 0.0
-            list[object] ranges = []
-            double time = 0.0
-            double drag = 0.0
-            double km = 0.0
-            V3dT range_vector, velocity_vector
+            double velocity
+            double delta_time
+            double density_ratio = <double>0.0
+            double mach = <double>0.0
+            list ranges = []
+            _CBaseTrajSeq traj_seq
+            double time = <double>0.0
+            double drag = <double>0.0
+            double km = <double>0.0
+            V3dT range_vector
+            V3dT velocity_vector
             V3dT relative_velocity
-            V3dT gravity_vector = V3dT(.0, self._config_s.cGravityConstant, .0)
-            double calc_step = self._shot_s.calc_step / 2.0
-
-            V3dT wind_vector = WindSock_t_currentVector(self._wind_sock)
+            V3dT gravity_vector
+            V3dT wind_vector
+            double calc_step = self._shot_s.calc_step
+            
             TrajDataFilter_t data_filter
             BaseTrajData data
-
-        cdef:
+            
+            # Early binding of configuration constants
             double _cMinimumVelocity = self._config_s.cMinimumVelocity
             double _cMinimumAltitude = self._config_s.cMinimumAltitude
             double _cMaximumDrop = -abs(self._config_s.cMaximumDrop)
-
-        cdef:
-            double last_recorded_range
-            object termination_reason
-
-        cdef:
+            
+            # Working variables
+            double last_recorded_range = <double>0.0
+            object termination_reason = None
             double relative_speed
-            V3dT _dir_vector, _tv, delta_range_vector
+            V3dT _dir_vector
+            V3dT _tv
+            V3dT delta_range_vector
+            int start_integration_step_count
+            object row
 
+        # Initialize gravity vector
+        gravity_vector.x = <double>0.0
+        gravity_vector.y = self._config_s.cGravityConstant
+        gravity_vector.z = <double>0.0
+
+        # Initialize wind vector
+        wind_vector = WindSock_t_currentVector(self._wind_sock)
+
+        # Initialize velocity and position vectors
         velocity = self._shot_s.muzzle_velocity
-        range_vector = V3dT(.0, -self._shot_s.cant_cosine * self._shot_s.sight_height,
-                            -self._shot_s.cant_sine * self._shot_s.sight_height)
-        _dir_vector = V3dT(
-            cos(self._shot_s.barrel_elevation) * cos(self._shot_s.barrel_azimuth),
-            sin(self._shot_s.barrel_elevation),
-            cos(self._shot_s.barrel_elevation) * sin(self._shot_s.barrel_azimuth)
-        )
+        
+        # Set range_vector components
+        range_vector.x = <double>0.0
+        range_vector.y = -self._shot_s.cant_cosine * self._shot_s.sight_height
+        range_vector.z = -self._shot_s.cant_sine * self._shot_s.sight_height
+        
+        # Set direction vector components
+        _dir_vector.x = cos(self._shot_s.barrel_elevation) * cos(self._shot_s.barrel_azimuth)
+        _dir_vector.y = sin(self._shot_s.barrel_elevation)
+        _dir_vector.z = cos(self._shot_s.barrel_elevation) * sin(self._shot_s.barrel_azimuth)
+        
+        # Calculate velocity vector
         velocity_vector = mulS(&_dir_vector, velocity)
 
+        # Create and initialize trajectory data filter
         data_filter = TrajDataFilter_t_create(filter_flags=filter_flags, range_step=range_step_ft,
                                               initial_position_ptr=&range_vector,
                                               initial_velocity_ptr=&velocity_vector,
                                               time_step=time_step)
         TrajDataFilter_t_setup_seen_zero(&data_filter, range_vector.y, &self._shot_s)
 
-        #region Trajectory Loop
-        warnings.simplefilter("once")  # used to avoid multiple warnings in a loop
-        termination_reason = None
-        last_recorded_range = 0.0
+        # Initialize trajectory sequence for dense output if needed
+        traj_seq = _CBaseTrajSeq()
+
+        # Trajectory Loop
+        warnings.simplefilter("once")  # avoid multiple warnings
+        
+        # Record start step count
+        start_integration_step_count = self.integration_step_count
+        
+        # Update air density and mach at initial altitude
+        Atmosphere_t_updateDensityFactorAndMachForAltitude(
+            &self._shot_s.atmo,
+            self._shot_s.alt0 + range_vector.y,
+            &density_ratio,
+            &mach
+        )
+        
+        # Check for data at initial point
+        data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
+        if data is not None:
+            row = create_trajectory_row(
+                data.time, &data.position, &data.velocity, data.mach,
+                &self._shot_s, density_ratio, drag, data_filter.current_flag)
+            ranges.append(row)
+            last_recorded_range = data.position.x
+        
+        if dense_output:
+            # Store initial point in trajectory sequence
+            traj_seq.append(time, range_vector.x, range_vector.y, range_vector.z,
+                           velocity_vector.x, velocity_vector.y, velocity_vector.z, mach)
+        
         while (range_vector.x <= range_limit_ft) or (last_recorded_range <= range_limit_ft - 1e-6):
             self.integration_step_count += 1
 
             # Update wind reading at current point in trajectory
-            if range_vector.x >= self._wind_sock.next_range:  # require check before call to improve performance
+            if range_vector.x >= self._wind_sock.next_range:
                 wind_vector = WindSock_t_vectorForRange(self._wind_sock, range_vector.x)
 
-            # Update air density at current point in trajectory
-            # overwrite density_ratio and mach by pointer
-            Atmosphere_t_updateDensityFactorAndMachForAltitude(&self._shot_s.atmo,
-                self._shot_s.alt0 + range_vector.y, &density_ratio, &mach)
+            # Update air density and mach at current altitude
+            Atmosphere_t_updateDensityFactorAndMachForAltitude(
+                &self._shot_s.atmo,
+                self._shot_s.alt0 + range_vector.y,
+                &density_ratio,
+                &mach
+            )
 
-            # region Check whether to record TrajectoryData row at current point
-            data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-            if data is not None:
-                ranges.append(create_trajectory_row(
-                    data.time, &data.position, &data.velocity, data.mach,
-                    &self._shot_s, density_ratio, drag, data_filter.current_flag
-                ))
-                last_recorded_range = data.position.x
-            # endregion
-
+            # Euler integration step
+            
+            # 1. Calculate relative velocity (projectile velocity - wind)
             relative_velocity = sub(&velocity_vector, &wind_vector)
             relative_speed = mag(&relative_velocity)
-
-            delta_time = calc_step / fmax(1.0, relative_speed)
+            
+            # 2. Calculate time step (adaptive based on velocity)
+            delta_time = self.time_step(calc_step, relative_speed)
+            
+            # 3. Calculate drag coefficient and drag force
             km = density_ratio * ShotData_t_dragByMach(&self._shot_s, relative_speed / mach)
             drag = km * relative_speed
+            
+            # 4. Apply drag and gravity to velocity
             _tv = mulS(&relative_velocity, drag)
             _tv = sub(&_tv, &gravity_vector)
             _tv = mulS(&_tv, delta_time)
-
             velocity_vector = sub(&velocity_vector, &_tv)
+            
+            # 5. Update position based on new velocity
             delta_range_vector = mulS(&velocity_vector, delta_time)
             range_vector = add(&range_vector, &delta_range_vector)
-
+            
+            # 6. Update time and velocity magnitude
             velocity = mag(&velocity_vector)
             time += delta_time
 
+            # Record point if needed
+            if dense_output:
+                # Store point in trajectory sequence
+                traj_seq.append(time, range_vector.x, range_vector.y, range_vector.z,
+                               velocity_vector.x, velocity_vector.y, velocity_vector.z, mach)
+            
+            data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
+            if data is not None:
+                # Create TrajectoryData row and add to results
+                row = create_trajectory_row(
+                    data.time, &data.position, &data.velocity, data.mach,
+                    &self._shot_s, density_ratio, drag, data_filter.current_flag)
+                ranges.append(row)
+                last_recorded_range = data.position.x
+
+            # Check termination conditions
             if (velocity < _cMinimumVelocity
                 or range_vector.y < _cMaximumDrop
                 or self._shot_s.alt0 + range_vector.y < _cMinimumAltitude
@@ -142,24 +362,32 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
                 else:
                     termination_reason = RangeError.MinimumAltitudeReached
                 break
-            #endregion Ballistic calculation step
-        #endregion Trajectory Loop
+
+        # Process final data point
         data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
         if data is not None:
-            ranges.append(create_trajectory_row(
+            # Create TrajectoryData row and add to results
+            row = create_trajectory_row(
                 data.time, &data.position, &data.velocity, data.mach,
-                &self._shot_s, density_ratio, drag, data_filter.current_flag
-            ))
-        # Ensure that we have at least two data points in trajectory
-        # ... as well as last point if we had an incomplete trajectory
+                &self._shot_s, density_ratio, drag, data_filter.current_flag)
+            ranges.append(row)
+        
+        # Ensure at least two data points and include final point if needed
         if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
             if len(ranges) > 0 and (<TrajectoryData>ranges[-1]).time == time:
                 pass
             else:
-                ranges.append(create_trajectory_row(time, &range_vector, &velocity_vector, mach,
-                    &self._shot_s, density_ratio, drag, TrajFlag_t.NONE))
+                row = create_trajectory_row(
+                    time, &range_vector, &velocity_vector, mach,
+                    &self._shot_s, density_ratio, drag, TrajFlag_t.NONE)
+                ranges.append(row)
 
         error = None
         if termination_reason is not None:
             error = RangeError(termination_reason, ranges)
-        return (ranges, error)
+            
+        # Return the appropriate output based on dense_output flag
+        if dense_output:
+            return (traj_seq, error)
+        else:
+            return (ranges, error)

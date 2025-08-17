@@ -165,21 +165,22 @@ cdef BaseTrajData TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
             tdf.current_flag |= TrajFlag_t.APEX
 
     # RANGE step
-    if data is None and (tdf.range_step > 0) and (curr_pos.x >= tdf.next_record_distance):
+    if (tdf.range_step > 0) and (curr_pos.x >= tdf.next_record_distance):
         while tdf.next_record_distance + tdf.range_step < curr_pos.x:
             tdf.next_record_distance += tdf.range_step
-        if curr_pos.x > prev_pos.x:
-            ratio = (tdf.next_record_distance - prev_pos.x) / (curr_pos.x - prev_pos.x)
-            dp = sub(position_ptr, &prev_pos)
-            dv = sub(velocity_ptr, &prev_vel)
-            tmp = mulS(&dp, ratio)
-            pos_interp = add(&prev_pos, &tmp)
-            tmp = mulS(&dv, ratio)
-            vel_interp = add(&prev_vel, &tmp)
-            data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
-                                       pos_interp,
-                                       vel_interp,
-                                       prev_mach + (mach - prev_mach) * ratio)
+        if data is None:
+            if curr_pos.x > prev_pos.x:
+                ratio = (tdf.next_record_distance - prev_pos.x) / (curr_pos.x - prev_pos.x)
+                dp = sub(position_ptr, &prev_pos)
+                dv = sub(velocity_ptr, &prev_vel)
+                tmp = mulS(&dp, ratio)
+                pos_interp = add(&prev_pos, &tmp)
+                tmp = mulS(&dv, ratio)
+                vel_interp = add(&prev_vel, &tmp)
+                data = BaseTrajData_create(prev_time + (time - prev_time) * ratio,
+                                           pos_interp,
+                                           vel_interp,
+                                           prev_mach + (mach - prev_mach) * ratio)
         tdf.current_flag |= TrajFlag_t.RANGE
         tdf.next_record_distance += tdf.range_step
         tdf.time_of_last_record = time
@@ -276,6 +277,8 @@ cdef WindSock_t * WindSock_t_create(object winds_py_list):
 
 
 cdef class CythonizedBaseIntegrationEngine:
+    
+    APEX_IS_MAX_RANGE_RADIANS = 0.0003  # Radians from vertical where the apex is max range
 
     def __cinit__(CythonizedBaseIntegrationEngine self, object _config):
         self._config = create_base_engine_config(_config)
@@ -363,7 +366,17 @@ cdef class CythonizedBaseIntegrationEngine:
         self._free_trajectory()
         props = ShotProps.from_shot(shot_info)
         props.filter_flags = filter_flags
-        return HitResult(props, object[0], None, filter_flags > 0, object[1])
+        
+        # Extract trajectory and step_data from the result
+        trajectory = object[0]
+        error = object[1]
+        step_data = None
+        
+        # If dense_output is True, we need to pass the step_data (the _CBaseTrajSeq) as step_data
+        if dense_output and len(object) >= 2:
+            step_data = trajectory  # For dense output, trajectory is the _CBaseTrajSeq
+        
+        return HitResult(props, trajectory, step_data, filter_flags != TrajFlag_t.NONE, error)
 
     cdef void _free_trajectory(CythonizedBaseIntegrationEngine self):
         if self._wind_sock is not NULL:
@@ -469,8 +482,14 @@ cdef class CythonizedBaseIntegrationEngine:
             double target_x_ft = <double>init_data[3]
             double target_y_ft = <double>init_data[4]
             double start_height_ft = <double>init_data[5]
+            double VERTICAL_SHOT_THRESHOLD = <double>0.0003  # About 0.017 degrees from vertical
         
         if status == 1:  # DONE
+            return _new_rad(look_angle_rad)
+            
+        # Special case for vertical or near-vertical shots
+        if fabs(look_angle_rad - <double>1.5707963267948966) < VERTICAL_SHOT_THRESHOLD:
+            # For vertical shots, return the same angle (90 degrees)
             return _new_rad(look_angle_rad)
         
         # 1. Find the maximum possible range to establish a search bracket.
@@ -492,7 +511,8 @@ cdef class CythonizedBaseIntegrationEngine:
             """Target miss (in feet) for given launch angle."""
             self._shot_s.barrel_elevation = angle_rad
             try:
-                t = self._integrate(<double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE, <bint>False)[0][-1]
+                result = self._integrate(<double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE, <bint>False)
+                t = result[0][-1]
             except RangeError as e:
                 if e.last_distance is None:
                     raise e
@@ -621,7 +641,8 @@ cdef class CythonizedBaseIntegrationEngine:
             self._shot_s.barrel_elevation = angle_rad
             
             try:
-                t = self._integrate(<double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE, <bint>False)[0][-1]
+                result = self._integrate(<double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE, <bint>False)
+                t = result[0][-1]
             except RangeError as e:
                 if e.last_distance is None:
                     raise e
@@ -675,15 +696,16 @@ cdef class CythonizedBaseIntegrationEngine:
             self._config_s.cMinimumVelocity = <double>0.0
             has_restore_min_velocity = 1
         
-        trajectory = self._integrate(<double>9e9, <double>9e9, <double>0.0, <int>TrajFlag.APEX, <bint>False)[0]
+        result = self._integrate(<double>9e9, <double>9e9, <double>0.0, <int>TrajFlag_t.APEX, <bint>False)
+        trajectory = result[0]
         props = ShotProps.from_shot(shot_info)
-        props.filter_flags = TrajFlag.APEX
-        hit_result = HitResult(props, trajectory, None, extra=True)
+        props.filter_flags = TrajFlag_t.APEX
+        hit_result = HitResult(props, trajectory, None, TrajFlag_t.APEX != TrajFlag_t.NONE)
 
         if has_restore_min_velocity:
             self._config_s.cMinimumVelocity = restore_min_velocity
         
-        apex = hit_result.flag(TrajFlag.APEX)
+        apex = hit_result.flag(TrajFlag_t.APEX)
         if not apex:
             raise SolverRuntimeError("No apex flagged in trajectory data")
         

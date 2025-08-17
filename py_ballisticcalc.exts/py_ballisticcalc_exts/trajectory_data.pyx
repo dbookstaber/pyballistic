@@ -1,10 +1,29 @@
 # noinspection PyUnresolvedReferences
 from cython cimport final
+from libc.math cimport fabs
 
 from py_ballisticcalc.unit import PreferredUnits
+import py_ballisticcalc.unit as pyunit
 
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.v3d cimport V3dT
+from py_ballisticcalc_exts.v3d cimport V3dT, set, mag
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
+
+# Helper functions to create unit objects
+cdef object _new_feet(double val):
+    return pyunit.Distance(float(val), pyunit.Unit.Foot)
+    
+cdef object _new_fps(double val):
+    return pyunit.Velocity(float(val), pyunit.Unit.FPS)
+    
+cdef object _new_rad(double val):
+    return pyunit.Angular(float(val), pyunit.Unit.Radian)
+    
+cdef object _new_ft_lb(double val):
+    return pyunit.Energy(float(val), pyunit.Unit.FootPound)
+    
+cdef object _new_lb(double val):
+    return pyunit.Weight(float(val), pyunit.Unit.Pound)
 
 
 @final
@@ -16,6 +35,87 @@ cdef class BaseTrajData:
         self.position = position
         self.velocity = velocity
         self.mach = mach
+    
+    @staticmethod
+    def interpolate(str key_attribute, double key_value,
+                   BaseTrajData p0, BaseTrajData p1, BaseTrajData p2):
+        """
+        Quadratic (Lagrange) interpolation of a BaseTrajData point.
+
+        Args:
+            key_attribute (str): Can be 'time', 'mach', or a vector component like 'position.x' or 'velocity.z'.
+            key_value (float): The value to interpolate.
+            p0, p1, p2 (BaseTrajData): Any three points surrounding the point where key_attribute==value.
+
+        Returns:
+            BaseTrajData: The interpolated data point.
+
+        Raises:
+            AttributeError: If the key_attribute is not a member of BaseTrajData.
+            ZeroDivisionError: If the interpolation fails due to zero division.
+                               (This will result if two of the points are identical).
+        """
+        cdef:
+            double x0, x1, x2
+            double time, px, py, pz, vx, vy, vz, mach
+        
+        # Get independent variable values
+        if key_attribute == 'time':
+            x0 = p0.time
+            x1 = p1.time
+            x2 = p2.time
+        elif key_attribute == 'mach':
+            x0 = p0.mach
+            x1 = p1.mach
+            x2 = p2.mach
+        elif key_attribute == 'position.x':
+            x0 = p0.position.x
+            x1 = p1.position.x
+            x2 = p2.position.x
+        elif key_attribute == 'position.y':
+            x0 = p0.position.y
+            x1 = p1.position.y
+            x2 = p2.position.y
+        elif key_attribute == 'position.z':
+            x0 = p0.position.z
+            x1 = p1.position.z
+            x2 = p2.position.z
+        elif key_attribute == 'velocity.x':
+            x0 = p0.velocity.x
+            x1 = p1.velocity.x
+            x2 = p2.velocity.x
+        elif key_attribute == 'velocity.y':
+            x0 = p0.velocity.y
+            x1 = p1.velocity.y
+            x2 = p2.velocity.y
+        elif key_attribute == 'velocity.z':
+            x0 = p0.velocity.z
+            x1 = p1.velocity.z
+            x2 = p2.velocity.z
+        else:
+            raise AttributeError(f"Cannot interpolate on '{key_attribute}'")
+
+        # Lagrange quadratic interpolation for all fields
+        time = lagrange_quadratic(key_value, x0, p0.time, x1, p1.time, x2, p2.time) if key_attribute != 'time' else key_value
+        px = lagrange_quadratic(key_value, x0, p0.position.x, x1, p1.position.x, x2, p2.position.x)
+        py = lagrange_quadratic(key_value, x0, p0.position.y, x1, p1.position.y, x2, p2.position.y)
+        pz = lagrange_quadratic(key_value, x0, p0.position.z, x1, p1.position.z, x2, p2.position.z)
+        vx = lagrange_quadratic(key_value, x0, p0.velocity.x, x1, p1.velocity.x, x2, p2.velocity.x)
+        vy = lagrange_quadratic(key_value, x0, p0.velocity.y, x1, p1.velocity.y, x2, p2.velocity.y)
+        vz = lagrange_quadratic(key_value, x0, p0.velocity.z, x1, p1.velocity.z, x2, p2.velocity.z)
+        mach = lagrange_quadratic(key_value, x0, p0.mach, x1, p1.mach, x2, p2.mach) if key_attribute != 'mach' else key_value
+        
+        return BaseTrajData_create(time, set(px, py, pz), set(vx, vy, vz), mach)
+
+cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) nogil:
+    """Quadratic interpolation for y at x, given three points. (Does not depend on order of points.)"""
+    cdef:
+        double L0, L1, L2
+    
+    L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
+    L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
+    L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
+    return y0 * L0 + y1 * L1 + y2 * L2
 
 cdef BaseTrajData BaseTrajData_create(double time, V3dT position, V3dT velocity, double mach):
     return BaseTrajData(time, position, velocity, mach)
@@ -63,6 +163,93 @@ cdef class TrajectoryData:
         self.energy = energy
         self.ogw = ogw
         self.flag = flag
+    
+    @staticmethod
+    def from_base_data(object props, BaseTrajData data, int flag=TrajFlag_t.NONE):
+        """Create a TrajectoryData instance from a BaseTrajData object."""
+        cdef double velocity_mag = mag(&data.velocity)
+        
+        return TrajectoryData(
+            time=data.time,
+            distance=_new_feet(data.position.x),
+            velocity=_new_fps(velocity_mag),
+            mach=velocity_mag / data.mach if data.mach != 0 else 0.0,
+            height=_new_feet(data.position.y),
+            slant_height=_new_feet(data.position.y),  # Simplified: In the original it uses look_angle
+            drop_adj=_new_rad(<double>0.0),  # Simplified: Requires getCorrection function
+            windage=_new_feet(data.position.z),
+            windage_adj=_new_rad(<double>0.0),  # Simplified: Requires getCorrection function
+            slant_distance=_new_feet(data.position.x),  # Simplified: In the original it uses look_angle
+            angle=_new_rad(<double>0.0),  # Simplified: In the original it calculates trajectory_angle
+            density_ratio=<double>0.0,
+            drag=<double>0.0,
+            energy=_new_ft_lb(<double>0.0),  # Simplified: Requires calculateEnergy function
+            ogw=_new_lb(<double>0.0),  # Simplified: Requires calculateOgw function
+            flag=flag
+        )
+    
+    @staticmethod
+    def interpolate(str key_attribute, double key_value,
+                   TrajectoryData t0, TrajectoryData t1, TrajectoryData t2, int flag):
+        """
+        Quadratic (Lagrange) interpolation of a TrajectoryData point.
+        
+        Args:
+            key_attribute (str): Attribute to interpolate on (e.g., 'time', 'mach', 'slant_height')
+            key_value (float): The value to interpolate for
+            t0, t1, t2 (TrajectoryData): Three points for interpolation
+            flag (int): Flag to set on the resulting TrajectoryData
+            
+        Returns:
+            TrajectoryData: The interpolated trajectory data point
+        """
+        cdef:
+            double x0, x1, x2
+            double time, mach, density_ratio, drag
+            object distance, velocity, height, slant_height, drop_adj
+            object windage, windage_adj, slant_distance, angle, energy, ogw
+            
+        # Get independent variable values
+        if key_attribute == 'time':
+            x0, x1, x2 = t0.time, t1.time, t2.time
+        elif key_attribute == 'mach':
+            x0, x1, x2 = t0.mach, t1.mach, t2.mach
+        elif key_attribute == 'slant_height':
+            x0, x1, x2 = t0.slant_height._feet, t1.slant_height._feet, t2.slant_height._feet
+        else:
+            raise AttributeError(f"Cannot interpolate on '{key_attribute}'")
+
+        # Helper function to interpolate a value
+        def interp_scalar(a0, a1, a2):
+            return lagrange_quadratic(key_value, x0, a0, x1, a1, x2, a2)
+            
+        # Interpolate all fields
+        time = key_value if key_attribute == 'time' else interp_scalar(t0.time, t1.time, t2.time)
+        mach = key_value if key_attribute == 'mach' else interp_scalar(t0.mach, t1.mach, t2.mach)
+        
+        # Create objects with interpolated values
+        from py_ballisticcalc.unit import Distance, Velocity, Angular, Energy, Weight
+        
+        distance = _new_feet(interp_scalar(t0.distance._feet, t1.distance._feet, t2.distance._feet))
+        velocity = _new_fps(interp_scalar(t0.velocity._fps, t1.velocity._fps, t2.velocity._fps))
+        height = _new_feet(interp_scalar(t0.height._feet, t1.height._feet, t2.height._feet))
+        slant_height = _new_feet(interp_scalar(t0.slant_height._feet, t1.slant_height._feet, t2.slant_height._feet))
+        drop_adj = _new_rad(interp_scalar(t0.drop_adj._rad, t1.drop_adj._rad, t2.drop_adj._rad))
+        windage = _new_feet(interp_scalar(t0.windage._feet, t1.windage._feet, t2.windage._feet))
+        windage_adj = _new_rad(interp_scalar(t0.windage_adj._rad, t1.windage_adj._rad, t2.windage_adj._rad))
+        slant_distance = _new_feet(interp_scalar(t0.slant_distance._feet, t1.slant_distance._feet, t2.slant_distance._feet))
+        angle = _new_rad(interp_scalar(t0.angle._rad, t1.angle._rad, t2.angle._rad))
+        density_ratio = interp_scalar(t0.density_ratio, t1.density_ratio, t2.density_ratio)
+        drag = interp_scalar(t0.drag, t1.drag, t2.drag)
+        energy = _new_ft_lb(interp_scalar(t0.energy._ft_lb, t1.energy._ft_lb, t2.energy._ft_lb))
+        ogw = _new_lb(interp_scalar(t0.ogw._lb, t1.ogw._lb, t2.ogw._lb))
+        
+        return TrajectoryData(
+            time, distance, velocity, mach,
+            height, slant_height, drop_adj,
+            windage, windage_adj, slant_distance,
+            angle, density_ratio, drag, energy, ogw, flag
+        )
 
     def formatted(TrajectoryData self) -> tuple[str, ...]:
         """
