@@ -45,10 +45,11 @@ C_SOURCES = {
 # Values are lists of C source file keys from C_SOURCES that they depend on.
 EXTENSION_DEPS = {
     "cy_bindings": ["bclib", "bind"],
+    "base_traj_seq": ["v3d"],
     "base_engine": ["v3d", "bclib"],
     "euler_engine": ["v3d", "bclib"],
     "rk4_engine": ["v3d", "bclib"],
-    "trajectory_data": [], # No specific C dependencies listed beyond its own .pyx
+    "trajectory_data": ["v3d"], # Needs v3d for vector operations
 }
 
 

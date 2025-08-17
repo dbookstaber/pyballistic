@@ -372,9 +372,9 @@ cdef class CythonizedBaseIntegrationEngine:
         error = object[1]
         step_data = None
         
-        # If dense_output is True, we need to pass the step_data (the _CBaseTrajSeq) as step_data
+        # If dense_output is True, we need to pass the step_data (the CBaseTrajSeq) as step_data
         if dense_output and len(object) >= 2:
-            step_data = trajectory  # For dense output, trajectory is the _CBaseTrajSeq
+            step_data = trajectory  # For dense output, trajectory is the CBaseTrajSeq
         
         return HitResult(props, trajectory, step_data, filter_flags != TrajFlag_t.NONE, error)
 

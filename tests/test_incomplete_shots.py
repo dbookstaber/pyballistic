@@ -68,9 +68,7 @@ def test_vertical_shot(zero_height_calc, loaded_engine_instance):
     z = hit_result.flag(TrajFlag.ZERO_DOWN)
     assert z is not None
     assert z.distance.raw_value == pytest.approx(0, abs=1e-10)
-    # We can't get this very close to zero until we interpolate for POIs:
-    #assert z.height >> Distance.Meter == pytest.approx(0, abs=1e-6)
-    assert z.height >> Distance.Meter < 1e-10
+    assert z.height >> Distance.Meter == pytest.approx(0, abs=1e-6)
     assert hit_result[-1].time != hit_result[-2].time, "Don't duplicate points"
 
 

@@ -23,20 +23,7 @@ from py_ballisticcalc_exts.base_engine cimport (
 )
 
 from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
-
-# Include BaseTrajC struct definition from header file
-cdef extern from "include/basetraj_seq.h" nogil:
-    ctypedef struct BaseTrajC:
-        double time
-        double px
-        double py
-        double pz
-        double vx
-        double vy
-        double vz
-        double mach
-        
-# Access methods implemented differently to avoid Cython pointer limitations
+from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq
 
 import warnings
 
@@ -45,130 +32,12 @@ from py_ballisticcalc.trajectory_data import HitResult
 
 __all__ = [
     'CythonizedEulerIntegrationEngine',
-    '_CBaseTrajSeq'
 ]
 
-cdef class _CBaseTrajSeq:
-    """
-    A lightweight Python sequence wrapper that owns a contiguous C buffer of BaseTrajC structs.
-    
-    This class provides a Python-compatible sequence interface that:
-    1. Owns the allocated C buffer and frees it on deallocation
-    2. Implements __len__ and __getitem__ for sequence-like access
-    3. Lazily converts BaseTrajC structs to Python BaseTrajData objects when accessed
-    
-    Memory ownership: The _CBaseTrajSeq owns the malloc'ed buffer and frees it in __dealloc__.
-    Thread-safety: This sequence is not thread-safe (similar to Python lists).
-    """
-    cdef:
-        BaseTrajC* _buffer  # Pointer to the C buffer
-        size_t _length      # Number of elements in buffer
-        size_t _capacity    # Allocated capacity of buffer
-    
-    def __cinit__(self):
-        """
-        Initialize the sequence with an empty buffer.
-        """
-        self._buffer = <BaseTrajC*>NULL
-        self._length = <size_t>0
-        self._capacity = <size_t>0
-        
-    def __dealloc__(self):
-        """
-        Free the C buffer when the sequence is deallocated.
-        """
-        if self._buffer:
-            free(<void*>self._buffer)
-            self._buffer = <BaseTrajC*>NULL
-            
-    cdef void _ensure_capacity(self, size_t min_capacity):
-        """
-        Ensure the buffer has at least min_capacity elements.
-        Grows the buffer using realloc if needed.
-        """
-        cdef size_t new_capacity
-        cdef BaseTrajC* new_buffer
-        
-        if min_capacity > self._capacity:
-            if self._capacity > 0:
-                new_capacity = max(<size_t>min_capacity, <size_t>(self._capacity * 2))
-            else:
-                new_capacity = <size_t>16
-                
-            new_buffer = <BaseTrajC*>realloc(<void*>self._buffer, new_capacity * sizeof(BaseTrajC))
-            
-            if not new_buffer:
-                raise MemoryError("Failed to allocate memory for trajectory buffer")
-                
-            self._buffer = new_buffer
-            self._capacity = new_capacity
-        
-    cdef void append(self, double time, double px, double py, double pz, 
-                     double vx, double vy, double vz, double mach):
-        """
-        Append a new BaseTrajC entry to the buffer.
-        """
-        self._ensure_capacity(self._length + 1)
-        
-        # Use helper function to access buffer element  
-        cdef BaseTrajC* entry_ptr = <BaseTrajC*>(<char*>self._buffer + self._length * sizeof(BaseTrajC))
-        entry_ptr.time = time
-        entry_ptr.px = px
-        entry_ptr.py = py 
-        entry_ptr.pz = pz
-        entry_ptr.vx = vx
-        entry_ptr.vy = vy
-        entry_ptr.vz = vz
-        entry_ptr.mach = mach
-        
-        self._length += 1
-    
-    def __len__(self):
-        """Return the number of elements in the sequence."""
-        return self._length
-    
-    def __getitem__(self, idx):
-        """
-        Return a BaseTrajData object for the element at the given index.
-        
-        Supports negative indices like regular Python sequences.
-        Raises IndexError for out-of-bounds access.
-        """
-        # Handle negative indices
-        if idx < 0:
-            idx = <size_t>(<int>self._length + idx)
-        if idx >= self._length:
-            raise IndexError("Index out of range")
-            
-        cdef:
-            V3dT position
-            V3dT velocity
-            BaseTrajC* entry_ptr
-        
-        # Get pointer to the entry
-        entry_ptr = <BaseTrajC*>(<char*>self._buffer + <size_t>idx * sizeof(BaseTrajC))
-        
-        # Create V3dT objects for position and velocity
-        position.x = entry_ptr.px
-        position.y = entry_ptr.py
-        position.z = entry_ptr.pz
-        
-        velocity.x = entry_ptr.vx
-        velocity.y = entry_ptr.vy
-        velocity.z = entry_ptr.vz
-        
-        # Return a new BaseTrajData object constructed from the buffer element
-        return BaseTrajData_create(
-            entry_ptr.time,
-            position,
-            velocity,
-            entry_ptr.mach
-        )
 
 cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
     """Cythonized Euler integration engine for ballistic calculations."""
-    # Match Python's EulerIntegrationEngine.DEFAULT_STEP
-    DEFAULT_STEP = 0.5
+    DEFAULT_STEP = 0.5  # Match Python's EulerIntegrationEngine.DEFAULT_STEP
 
     cdef double get_calc_step(CythonizedEulerIntegrationEngine self):
         """Calculate the step size for integration."""
@@ -194,7 +63,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         
         Returns:
             Tuple of (list of TrajectoryData points, optional error) or
-            (_CBaseTrajSeq, optional error) if dense_output is True
+            (CBaseTrajSeq, optional error) if dense_output is True
         """
         cdef:
             double velocity
@@ -202,7 +71,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             double density_ratio = <double>0.0
             double mach = <double>0.0
             list ranges = []
-            _CBaseTrajSeq traj_seq
+            CBaseTrajSeq traj_seq
             double time = <double>0.0
             double drag = <double>0.0
             double km = <double>0.0
@@ -263,7 +132,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         TrajDataFilter_t_setup_seen_zero(&data_filter, range_vector.y, &self._shot_s)
 
         # Initialize trajectory sequence for dense output if needed
-        traj_seq = _CBaseTrajSeq()
+        traj_seq = CBaseTrajSeq()
 
         # Trajectory Loop
         warnings.simplefilter("once")  # avoid multiple warnings

@@ -1,35 +1,29 @@
 """
-rk4_engine.pyx Module design notes (Phase 1 - C buffer + lazy Python conversion)
+Phase 1 Implementation: Cythonized RK4 Integration Engine
 
-Overview:
-- The Cythonized RK4 engine implements the numeric stepping in C-level code for speed.
-- To avoid per-step Python object allocation in the hot loop, the integrator writes
-    dense samples into a contiguous C buffer (`BaseTrajC` structs).
-- At the end of integration we return a lightweight Python sequence wrapper
-    (`_CBaseTrajSeq`) which owns the buffer and exposes `__len__` and `__getitem__`.
+This module implements the RK4 (Runge-Kutta 4th order) integration engine
+using the Phase 1 C buffer approach. The numeric stepping is performed in C
+using malloc/realloc contiguous buffers for optimal performance.
 
-Behavioral contract and rationale:
-- The integrator (C-layer) performs numeric stepping only and must not perform
-    high-level event detection, interpolation, or flag unioning. Those responsibilities
-    remain in Python (`_TrajectoryDataFilter`) for parity with the pure-Python engine.
-- The C-buffer avoids allocating a Python `BaseTrajData` per step. Construction of
-    `BaseTrajData` objects is deferred to `_CBaseTrajSeq.__getitem__`, so Python objects
-    are only created when the Python-side filter actually accesses samples.
-- This design allows immediate parity with the Python engine (the Python filter
-    continues to drive event detection and interpolation) while substantially reducing
-    the hot-loop overhead.
+Key Phase 1 Features:
+- Uses CBaseTrajSeq for C buffer storage 
+- Numeric integration performed entirely in C
+- Option A approach: lazy conversion to Python objects via __getitem__
+- Compatible with existing Python TrajectoryDataFilter
 
-Memory ownership:
-- The `_CBaseTrajSeq` owns the malloc'ed buffer and frees it in `__dealloc__`.
-- `_integrate` must transfer ownership to the returned `_CBaseTrajSeq` and must not
-    free the buffer itself after returning the sequence.
+This replaces the pure Python RK4IntegrationEngine with a Cythonized version
+that achieves significant performance improvements while maintaining API compatibility.
 
-Notes for maintainers:
-- Phase 2 (optional): add a C-entrypoint on the Python filter to consume the C buffer
-    directly without creating per-sample Python objects; this yields further speedups
-    but requires refactoring `_TrajectoryDataFilter` to accept C-level samples.
-- The Python `base_engine` wrapper expects a sequence-like `step_data`. This file
-    preserves that contract so tests and the rest of the codebase require minimal changes.
+Architecture:
+- Inherits from CythonizedBaseIntegrationEngine  
+- Uses CBaseTrajSeq from shared base_traj_seq module
+- All trajectory calculations performed in C
+- Returns either TrajectoryData list or CBaseTrajSeq for dense output
+
+Performance Notes:
+- RK4 is inherently compute-intensive (4 evaluations per step)
+- C implementation provides substantial speedup over Python
+- Memory allocation is optimized using realloc growth strategy
 """
 
 # noinspection PyUnresolvedReferences
@@ -62,25 +56,8 @@ from py_ballisticcalc_exts.base_engine cimport (
     TrajDataFilter_t_should_record,
 )
 
-# Include BaseTrajC struct definition from header file
-cdef extern from "include/basetraj_seq.h" nogil:
-    ctypedef struct BaseTrajC:
-        double time
-        double px
-        double py
-        double pz
-        double vx
-        double vy
-        double vz
-        double mach
-        
-# Accessor functions to work around Cython's limitations with pointer arithmetic
-cdef BaseTrajC* get_basetrajc(BaseTrajC* buffer, size_t idx) nogil:
-    return <BaseTrajC*>(<char*>buffer + idx * sizeof(BaseTrajC))
-
-# noinspection PyUnresolvedReferences
+from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq
 from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
-
 
 import warnings
 
@@ -89,121 +66,7 @@ from py_ballisticcalc.trajectory_data import HitResult
 
 __all__ = [
     'CythonizedRK4IntegrationEngine',
-    '_CBaseTrajSeq'
 ]
-
-cdef class _CBaseTrajSeq:
-    """
-    A lightweight Python sequence wrapper that owns a contiguous C buffer of BaseTrajC structs.
-    
-    This class provides a Python-compatible sequence interface that:
-    1. Owns the allocated C buffer and frees it on deallocation
-    2. Implements __len__ and __getitem__ for sequence-like access
-    3. Lazily converts BaseTrajC structs to Python BaseTrajData objects when accessed
-    
-    Memory ownership: The _CBaseTrajSeq owns the malloc'ed buffer and frees it in __dealloc__.
-    Thread-safety: This sequence is not thread-safe (similar to Python lists).
-    """
-    cdef:
-        BaseTrajC* _buffer  # Pointer to the C buffer
-        size_t _length      # Number of elements in buffer
-        size_t _capacity    # Allocated capacity of buffer
-    
-    def __cinit__(self):
-        """
-        Initialize the sequence with an empty buffer.
-        """
-        self._buffer = <BaseTrajC*>NULL
-        self._length = <size_t>0
-        self._capacity = <size_t>0
-        
-    def __dealloc__(self):
-        """
-        Free the C buffer when the sequence is deallocated.
-        """
-        if self._buffer:
-            free(<void*>self._buffer)
-            self._buffer = <BaseTrajC*>NULL
-            
-    cdef void _ensure_capacity(self, size_t min_capacity):
-        """
-        Ensure the buffer has at least min_capacity elements.
-        Grows the buffer using realloc if needed.
-        """
-        cdef size_t new_capacity
-        cdef BaseTrajC* new_buffer
-        
-        if min_capacity > self._capacity:
-            if self._capacity > 0:
-                new_capacity = max(<size_t>min_capacity, <size_t>(self._capacity * 2))
-            else:
-                new_capacity = <size_t>16
-                
-            new_buffer = <BaseTrajC*>realloc(<void*>self._buffer, new_capacity * sizeof(BaseTrajC))
-            
-            if not new_buffer:
-                raise MemoryError("Failed to allocate memory for trajectory buffer")
-                
-            self._buffer = new_buffer
-            self._capacity = new_capacity
-        
-    cdef void append(self, double time, double px, double py, double pz, 
-                     double vx, double vy, double vz, double mach):
-        """
-        Append a new BaseTrajC entry to the buffer.
-        """
-        self._ensure_capacity(self._length + 1)
-        
-        cdef BaseTrajC* entry = get_basetrajc(self._buffer, self._length)
-        entry.time = time
-        entry.px = px
-        entry.py = py 
-        entry.pz = pz
-        entry.vx = vx
-        entry.vy = vy
-        entry.vz = vz
-        entry.mach = mach
-        
-        self._length += 1
-    
-    def __len__(self):
-        """Return the number of elements in the sequence."""
-        return self._length
-    
-    def __getitem__(self, idx):
-        """
-        Return a BaseTrajData object for the element at the given index.
-        
-        Supports negative indices like regular Python sequences.
-        Raises IndexError for out-of-bounds access.
-        """
-        # Handle negative indices
-        if idx < 0:
-            idx = <size_t>(<int>self._length + idx)
-        if idx >= self._length:
-            raise IndexError("Index out of range")
-            
-        cdef:
-            V3dT position
-            V3dT velocity
-            BaseTrajC* entry = get_basetrajc(self._buffer, <size_t>idx)
-        
-        # Create V3dT objects for position and velocity
-        position.x = entry.px
-        position.y = entry.py
-        position.z = entry.pz
-        
-        velocity.x = entry.vx
-        velocity.y = entry.vy
-        velocity.z = entry.vz
-        
-        # Return a new BaseTrajData object constructed from the buffer element
-        return BaseTrajData_create(
-            entry.time,
-            position,
-            velocity,
-            entry.mach
-        )
 
 cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
     """Cythonized RK4 (Runge-Kutta 4th order) integration engine for ballistic calculations."""
@@ -229,7 +92,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
         
         Returns:
             Tuple of (list of TrajectoryData points, optional error) or
-            (_CBaseTrajSeq, optional error) if dense_output is True
+            (CBaseTrajSeq, optional error) if dense_output is True
         """
         cdef:
             double velocity, delta_time
@@ -272,7 +135,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             V3dT p1, p2, p3, p4
             
             # For storing dense output
-            _CBaseTrajSeq traj_seq
+            CBaseTrajSeq traj_seq
 
         # Initialize gravity vector
         gravity_vector.x = <double>0.0
@@ -305,17 +168,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                                               time_step=time_step)
         TrajDataFilter_t_setup_seen_zero(&data_filter, range_vector.y, &self._shot_s)
 
-        # Initialize trajectory sequence for dense output if needed
-        if dense_output:
-            traj_seq = _CBaseTrajSeq()
-
-        # Trajectory Loop
-        warnings.simplefilter("once")  # avoid multiple warnings
-        
-        # Record start step count
-        start_integration_step_count = self.integration_step_count
-        
-        # Update air density and mach at initial altitude
         Atmosphere_t_updateDensityFactorAndMachForAltitude(
             &self._shot_s.atmo,
             self._shot_s.alt0 + range_vector.y,
@@ -323,6 +175,9 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             &mach
         )
         
+        if dense_output:
+            traj_seq = CBaseTrajSeq()
+
         # Check for data at initial point
         data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
         if data is not None:
@@ -331,9 +186,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                 &self._shot_s, density_ratio, drag, data_filter.current_flag)
             ranges.append(row)
             last_recorded_range = data.position.x
-        
-        if dense_output:
-            # Store initial point in trajectory sequence
+        if dense_output:  # Store initial point in trajectory sequence
             traj_seq.append(
                 time,
                 range_vector.x, range_vector.y, range_vector.z,
@@ -341,6 +194,9 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                 mach
             )
         
+        # Trajectory Loop
+        warnings.simplefilter("once")  # avoid multiple warnings
+        start_integration_step_count = self.integration_step_count
         while (range_vector.x <= range_limit_ft) or (last_recorded_range <= range_limit_ft - 1e-6):
             self.integration_step_count += 1
 
@@ -364,7 +220,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             km = density_ratio * ShotData_t_dragByMach(&self._shot_s, relative_speed / mach)
             drag = km * relative_speed
 
-            # RK4 integration
+            #region RK4 integration
             
             # v1 = f(relative_velocity)
             v1 = _calculate_dvdt(&relative_velocity, &gravity_vector, km)
@@ -452,7 +308,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                 else:
                     termination_reason = RangeError.MinimumAltitudeReached
                 break
-
+            #endregion
         # Process final data point
         data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
         if data is not None:
@@ -499,5 +355,3 @@ cdef V3dT _calculate_dvdt(const V3dT *v_ptr, const V3dT *gravity_vector_ptr, dou
     # Bullet velocity changes due to both drag and gravity
     drag_force_component = mulS(v_ptr, km_coeff * mag(v_ptr))
     return sub(gravity_vector_ptr, &drag_force_component)
-
-
