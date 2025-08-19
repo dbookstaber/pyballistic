@@ -17,9 +17,9 @@ Key Features:
 """
 
 from libc.stdlib cimport malloc, realloc, free
-from py_ballisticcalc_exts.trajectory_data cimport BaseTrajDataT, BaseTrajDataT_create
+from libc.stddef cimport size_t
+from py_ballisticcalc_exts.trajectory_data cimport BaseTrajDataT, BaseTrajDataT_create, lagrange_quadratic
 from py_ballisticcalc_exts.v3d cimport V3dT
-from py_ballisticcalc_exts.trajectory_data cimport lagrange_quadratic
 
 # Include BaseTrajC struct definition from header file
 cdef extern from "include/basetraj_seq.h" nogil:
@@ -60,6 +60,8 @@ cdef class CBaseTrajSeq:
         trajectory_data = traj_seq[0]  # Lazily converted to BaseTrajData
     """
     
+    # Attributes declared in the matching .pxd; do not redeclare here.
+
     def __cinit__(self):
         """
         Initialize the sequence with an empty buffer.
@@ -96,10 +98,16 @@ cdef class CBaseTrajSeq:
         """
         cdef size_t new_capacity
         cdef BaseTrajC* new_buffer
+        cdef size_t doubled
         
         if min_capacity > self._capacity:
             if self._capacity > 0:
-                new_capacity = max(<size_t>min_capacity, <size_t>(self._capacity * 2))
+                # Avoid Python builtin 'max' in hot path; do pure C comparison
+                doubled = <size_t>(self._capacity * 2)
+                if doubled > <size_t>min_capacity:
+                    new_capacity = doubled
+                else:
+                    new_capacity = <size_t>min_capacity
             else:
                 new_capacity = <size_t>16  # Start with reasonable initial size
                 
@@ -111,13 +119,10 @@ cdef class CBaseTrajSeq:
             self._buffer = new_buffer
             self._capacity = new_capacity
         
-    cdef void append(self, double time, double px, double py, double pz, 
+    cdef void _append_c(self, double time, double px, double py, double pz, 
                      double vx, double vy, double vz, double mach):
         """
         Append a new BaseTrajC entry to the buffer.
-        
-        This is the core method for Phase 1 - it stores trajectory data
-        directly in the C buffer without creating Python objects.
         
         Args:
             time: Time value
@@ -125,8 +130,11 @@ cdef class CBaseTrajSeq:
             vx, vy, vz: Velocity coordinates
             mach: Mach number
         """
+        # Note: this is the raw C implementation used on hot paths. It is declared
+        # nogil so callers that hold the GIL may release it for faster operation.
+        # Python-level callers should use the thin Python wrapper `append` below.
         self._ensure_capacity(self._length + 1)
-        
+
         # Calculate pointer to new entry using byte arithmetic (self._buffer + self._length)
         cdef BaseTrajC* entry_ptr = <BaseTrajC*>(<char*>self._buffer + self._length * sizeof(BaseTrajC))
         entry_ptr.time = time
@@ -137,8 +145,44 @@ cdef class CBaseTrajSeq:
         entry_ptr.vy = vy
         entry_ptr.vz = vz
         entry_ptr.mach = mach
-        
+
+        # increment length (must be done while still holding the GIL in typical callers)
         self._length += 1
+    # Nogil try/grow and append helpers are implemented as module-level raw
+    # helpers to avoid touching 'self' without holding the GIL.
+
+    def append(self, double time, double px, double py, double pz, 
+                     double vx, double vy, double vz, double mach):
+        """Python wrapper around the cdef hot-path `_append_c`.
+
+        Attempt a nogil fast-path that grows and appends using the raw
+        nogil helpers declared in the .pxd. If the nogil fast-path fails
+        (allocation failure), fall back to the GIL path which raises
+        a MemoryError on failure.
+        """
+        cdef BaseTrajC* local_buf = self._buffer
+        cdef size_t local_cap = self._capacity
+        cdef size_t local_len = self._length
+        cdef bint ok = False
+
+        # Try the nogil fast-path: grow (if needed) and append while holding no GIL.
+        # We use local copies and then write them back into `self` on success.
+        with nogil:
+            ok = ensure_capacity_try_nogil_raw(&local_buf, &local_cap, <size_t>(local_len + 1))
+            if ok:
+                append_nogil_raw(&local_buf, &local_len, time, px, py, pz, vx, vy, vz, mach)
+
+        if ok:
+            # Commit changes made while nogil: update buffer pointer, capacity and length
+            self._buffer = local_buf
+            self._capacity = local_cap
+            self._length = local_len
+            return
+
+        # Nogil fast-path failed (likely allocation); fall back to the GIL-protected path
+        # which will raise MemoryError on failure.
+        self._ensure_capacity(self._length + 1)
+        self._append_c(time, px, py, pz, vx, vy, vz, mach)
     
     cdef BaseTrajC* c_getitem(self, Py_ssize_t idx):
         """
@@ -155,13 +199,8 @@ cdef class CBaseTrajSeq:
         return <BaseTrajC*>(<char*>self._buffer + <size_t>idx * sizeof(BaseTrajC))
 
     def __len__(self):
-        """
-        Return the number of elements in the sequence.
-        
-        Returns:
-            int: Number of trajectory points stored
-        """
-        return self._length
+        """Return the number of elements in the sequence."""
+        return <Py_ssize_t> self._length
     
     def __getitem__(self, idx):
         """
@@ -184,7 +223,7 @@ cdef class CBaseTrajSeq:
             Py_ssize_t _i
 
         # Convert Python index to Py_ssize_t and get pointer to the entry
-        _i = idx
+        _i = <Py_ssize_t> idx
         entry_ptr = self.c_getitem(_i)
 
         # Create V3dT objects for position and velocity
@@ -204,58 +243,163 @@ cdef class CBaseTrajSeq:
             entry_ptr.mach
         )
 
-    cdef BaseTrajDataT interpolate_at(self, Py_ssize_t idx, str key_attribute, double key_value):
+    cdef BaseTrajDataT _interpolate_at_c(self, Py_ssize_t idx, str key_attribute, double key_value):
         """
-        Fast C-level interpolation around idx (uses points idx-1, idx, idx+1).
-        Returns a BaseTrajDataT (C-level object) constructed from the interpolated values.
-        Raises IndexError if there are not enough surrounding points.
+        Wrapper that uses the nogil interpolation core and constructs the
+        Python-facing BaseTrajDataT object. The numeric work runs in nogil
+        and returns a malloc'ed BaseTrajC which we copy into a Python object
+        and then free.
+
+        Returns NULL (or raises) on error consistent with Python wrapper semantics.
         """
-        cdef Py_ssize_t length = <Py_ssize_t> self._length
-        cdef BaseTrajC *p0
-        cdef BaseTrajC *p1
-        cdef BaseTrajC *p2
-        cdef double x0, x1, x2
-        cdef double time, px, py, pz, vx, vy, vz, mach
         cdef V3dT pos, vel
-
-        if idx < 0:
-            idx += length
-        if idx <= 0 or idx >= length - 1:
-            raise IndexError("interpolate_at requires idx with valid neighbors (idx-1, idx, idx+1)")
-
-        p0 = <BaseTrajC*>((<char*>self._buffer) + <size_t>(idx - 1) * sizeof(BaseTrajC))
-        p1 = <BaseTrajC*>((<char*>self._buffer) + <size_t>idx * sizeof(BaseTrajC))
-        p2 = <BaseTrajC*>((<char*>self._buffer) + <size_t>(idx + 1) * sizeof(BaseTrajC))
+        cdef BaseTrajC* outp
+        cdef int key_kind
+        cdef double time, mach
 
         if key_attribute == 'time':
-            x0 = p0.time; x1 = p1.time; x2 = p2.time
+            key_kind = 0
         elif key_attribute == 'mach':
-            x0 = p0.mach; x1 = p1.mach; x2 = p2.mach
+            key_kind = 1
         elif key_attribute == 'position.x':
-            x0 = p0.px; x1 = p1.px; x2 = p2.px
+            key_kind = 2
         elif key_attribute == 'position.y':
-            x0 = p0.py; x1 = p1.py; x2 = p2.py
+            key_kind = 3
         elif key_attribute == 'position.z':
-            x0 = p0.pz; x1 = p1.pz; x2 = p2.pz
+            key_kind = 4
         elif key_attribute == 'velocity.x':
-            x0 = p0.vx; x1 = p1.vx; x2 = p2.vx
+            key_kind = 5
         elif key_attribute == 'velocity.y':
-            x0 = p0.vy; x1 = p1.vy; x2 = p2.vy
+            key_kind = 6
         elif key_attribute == 'velocity.z':
-            x0 = p0.vz; x1 = p1.vz; x2 = p2.vz
+            key_kind = 7
         else:
             raise AttributeError(f"Cannot interpolate on '{key_attribute}'")
 
-        time = lagrange_quadratic(key_value, x0, p0.time, x1, p1.time, x2, p2.time) if key_attribute != 'time' else key_value
-        px   = lagrange_quadratic(key_value, x0, p0.px,   x1, p1.px,   x2, p2.px)
-        py   = lagrange_quadratic(key_value, x0, p0.py,   x1, p1.py,   x2, p2.py)
-        pz   = lagrange_quadratic(key_value, x0, p0.pz,   x1, p1.pz,   x2, p2.pz)
-        vx   = lagrange_quadratic(key_value, x0, p0.vx,   x1, p1.vx,   x2, p2.vx)
-        vy   = lagrange_quadratic(key_value, x0, p0.vy,   x1, p1.vy,   x2, p2.vy)
-        vz   = lagrange_quadratic(key_value, x0, p0.vz,   x1, p1.vz,   x2, p2.vz)
-        mach = lagrange_quadratic(key_value, x0, p0.mach, x1, p1.mach, x2, p2.mach) if key_attribute != 'mach' else key_value
+        # Copy C-level buffer and length to local C variables while holding the GIL
+        cdef BaseTrajC* _buf = self._buffer
+        cdef size_t _len = <size_t> self._length
+        with nogil:
+            outp = _interpolate_nogil_raw(_buf, _len, idx, key_kind, key_value)
 
-        pos.x = px; pos.y = py; pos.z = pz
-        vel.x = vx; vel.y = vy; vel.z = vz
+        if outp == NULL:
+            raise IndexError("interpolate_at requires idx with valid neighbors (idx-1, idx, idx+1)")
 
-        return BaseTrajDataT_create(time, pos, vel, mach)
+        pos.x = outp.px; pos.y = outp.py; pos.z = outp.pz
+        vel.x = outp.vx; vel.y = outp.vy; vel.z = outp.vz
+        time = outp.time; mach = outp.mach
+
+        cdef BaseTrajDataT result = BaseTrajDataT_create(time, pos, vel, mach)
+        free(<void*>outp)
+        return result
+
+    def interpolate_at(self, Py_ssize_t idx, str key_attribute, double key_value):
+        """Python wrapper around `_interpolate_at_c` that returns a BaseTrajDataT or raises."""
+        cdef BaseTrajDataT res = self._interpolate_at_c(idx, key_attribute, key_value)
+        return res
+
+# Module-level nogil implementation that operates on raw buffers.
+cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) nogil:
+    cdef Py_ssize_t plength = <Py_ssize_t> length
+    cdef BaseTrajC *p0
+    cdef BaseTrajC *p1
+    cdef BaseTrajC *p2
+    cdef double x0, x1, x2
+    cdef double time, px, py, pz, vx, vy, vz, mach
+    cdef BaseTrajC* outp
+
+    if idx < 0:
+        idx += plength
+    if idx <= 0 or idx >= plength - 1:
+        return <BaseTrajC*>NULL
+
+    p0 = <BaseTrajC*>((<char*>buffer) + <size_t>(idx - 1) * sizeof(BaseTrajC))
+    p1 = <BaseTrajC*>((<char*>buffer) + <size_t>idx * sizeof(BaseTrajC))
+    p2 = <BaseTrajC*>((<char*>buffer) + <size_t>(idx + 1) * sizeof(BaseTrajC))
+
+    # key_kind values correspond to the enum defined in the .pxd (integers)
+    if key_kind == 0:  # KEY_TIME
+        x0 = p0.time; x1 = p1.time; x2 = p2.time
+    elif key_kind == 1:  # KEY_MACH
+        x0 = p0.mach; x1 = p1.mach; x2 = p2.mach
+    elif key_kind == 2:  # KEY_POS_X
+        x0 = p0.px; x1 = p1.px; x2 = p2.px
+    elif key_kind == 3:  # KEY_POS_Y
+        x0 = p0.py; x1 = p1.py; x2 = p2.py
+    elif key_kind == 4:  # KEY_POS_Z
+        x0 = p0.pz; x1 = p1.pz; x2 = p2.pz
+    elif key_kind == 5:  # KEY_VEL_X
+        x0 = p0.vx; x1 = p1.vx; x2 = p2.vx
+    elif key_kind == 6:  # KEY_VEL_Y
+        x0 = p0.vy; x1 = p1.vy; x2 = p2.vy
+    elif key_kind == 7:  # KEY_VEL_Z
+        x0 = p0.vz; x1 = p1.vz; x2 = p2.vz
+    else:
+        return <BaseTrajC*>NULL
+
+    if key_kind != 0:
+        time = lagrange_quadratic(key_value, x0, p0.time, x1, p1.time, x2, p2.time)
+    else:
+        time = key_value
+
+    px   = lagrange_quadratic(key_value, x0, p0.px,   x1, p1.px,   x2, p2.px)
+    py   = lagrange_quadratic(key_value, x0, p0.py,   x1, p1.py,   x2, p2.py)
+    pz   = lagrange_quadratic(key_value, x0, p0.pz,   x1, p1.pz,   x2, p2.pz)
+    vx   = lagrange_quadratic(key_value, x0, p0.vx,   x1, p1.vx,   x2, p2.vx)
+    vy   = lagrange_quadratic(key_value, x0, p0.vy,   x1, p1.vy,   x2, p2.vy)
+    vz   = lagrange_quadratic(key_value, x0, p0.vz,   x1, p1.vz,   x2, p2.vz)
+
+    if key_kind != 1:
+        mach = lagrange_quadratic(key_value, x0, p0.mach, x1, p1.mach, x2, p2.mach)
+    else:
+        mach = key_value
+
+    outp = <BaseTrajC*> malloc(<size_t>(sizeof(BaseTrajC)))
+    if outp == NULL:
+        return <BaseTrajC*>NULL
+
+    outp.time = time
+    outp.px = px; outp.py = py; outp.pz = pz
+    outp.vx = vx; outp.vy = vy; outp.vz = vz
+    outp.mach = mach
+
+    return outp
+
+
+# Nogil-safe raw capacity/append helpers implemented to match .pxd declarations.
+# These operate purely on C pointers and primitive types so they can run without the GIL.
+cdef bint ensure_capacity_try_nogil_raw(BaseTrajC** buf_p, size_t* capacity_p, size_t min_capacity) nogil:
+    cdef size_t cur = capacity_p[0]
+    cdef size_t new_capacity
+    cdef BaseTrajC* new_buf
+    cdef size_t doubled
+
+    if min_capacity <= cur:
+        return True
+
+    if cur > 0:
+        doubled = <size_t>(cur * 2)
+        if doubled > min_capacity:
+            new_capacity = doubled
+        else:
+            new_capacity = min_capacity
+    else:
+        new_capacity = <size_t>16
+
+    new_buf = <BaseTrajC*>realloc(<void*>buf_p[0], new_capacity * sizeof(BaseTrajC))
+    if new_buf == NULL:
+        return False
+
+    buf_p[0] = new_buf
+    capacity_p[0] = new_capacity
+    return True
+
+
+cdef void append_nogil_raw(BaseTrajC** buf_p, size_t* length_p, double time, double px, double py, double pz,
+                          double vx, double vy, double vz, double mach) nogil:
+    cdef BaseTrajC* entry_ptr = <BaseTrajC*>((<char*>buf_p[0]) + (<size_t>length_p[0]) * sizeof(BaseTrajC))
+    entry_ptr.time = time
+    entry_ptr.px = px; entry_ptr.py = py; entry_ptr.pz = pz
+    entry_ptr.vx = vx; entry_ptr.vy = vy; entry_ptr.vz = vz
+    entry_ptr.mach = mach
+    length_p[0] = <size_t>(length_p[0] + 1)

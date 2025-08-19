@@ -21,6 +21,29 @@ cdef extern from "include/basetraj_seq.h" nogil:
         double vz
         double mach
 
+# Public enum for interpolation keys; exposed at module-level so .pyx can
+# reference it for nogil helpers.
+cdef enum InterpKey:
+    KEY_TIME
+    KEY_MACH
+    KEY_POS_X
+    KEY_POS_Y
+    KEY_POS_Z
+    KEY_VEL_X
+    KEY_VEL_Y
+    KEY_VEL_Z
+
+# Nogil core: returns a malloc'ed BaseTrajC* on success or NULL on failure.
+
+# Module-level nogil function that operates directly on raw buffer pointers.
+# It returns a malloc'ed BaseTrajC* or NULL on error.
+cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) nogil
+# Nogil-safe raw capacity/append helpers that operate on C pointers.
+# They mutate the buffer pointer and lengths via provided C pointers.
+cdef bint ensure_capacity_try_nogil_raw(BaseTrajC** buf_p, size_t* capacity_p, size_t min_capacity) nogil
+cdef void append_nogil_raw(BaseTrajC** buf_p, size_t* length_p, double time, double px, double py, double pz,
+                          double vx, double vy, double vz, double mach) nogil
+
 cdef class CBaseTrajSeq:
     """
     C Buffer Trajectory Sequence
@@ -29,9 +52,21 @@ cdef class CBaseTrajSeq:
         BaseTrajC* _buffer  # Pointer to the C buffer
         size_t _length      # Number of elements in buffer
         size_t _capacity    # Allocated capacity of buffer
-    
+
     cdef void _ensure_capacity(self, size_t min_capacity)
-    cdef void append(self, double time, double px, double py, double pz, 
+    # Project convention: hot-path implementations are `cdef` (nogil where helpful)
+    # with thin Python `def` wrappers in the .pyx. This keeps C-level calls
+    # zero-overhead while preserving Python testability.
+    cdef void _append_c(self, double time, double px, double py, double pz, 
                      double vx, double vy, double vz, double mach)
+    # (nogil helpers are implemented as module-level functions that operate on raw
+    # C pointers and lengths to avoid accessing 'self' without the GIL.)
+    # Note: nogil try/grow helpers removed in this patch for compilation stability.
     cdef BaseTrajC* c_getitem(self, Py_ssize_t idx)
-    cdef BaseTrajDataT interpolate_at(self, Py_ssize_t idx, str key_attribute, double key_value)
+    cdef BaseTrajDataT _interpolate_at_c(self, Py_ssize_t idx, str key_attribute, double key_value)
+    # Use plain int for the key_kind in the pxd to avoid enum cross-import issues.
+    # Note: class does not expose nogil methods that access 'self'. Instead a
+    # module-level nogil function is provided below to operate on raw buffers.
+
+    # Nogil interpolation core declared below as module-level enum and function.
+
