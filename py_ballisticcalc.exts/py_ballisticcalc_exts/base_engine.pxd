@@ -1,22 +1,8 @@
 # pxd for py_ballisticcalc_exts.base_engine
 
-# noinspection PyUnresolvedReferences
-from cython cimport final
-# noinspection PyUnresolvedReferences
-from libc.math cimport fabs, sin, cos, tan, atan, atan2
-
-# noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData
-# noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.cy_bindings cimport (
-    Config_t,
-    Wind_t,
-    ShotData_t,
-)
-# noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.v3d cimport (
-    V3dT
-)
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT
+from py_ballisticcalc_exts.cy_bindings cimport Config_t, Wind_t, ShotData_t
+from py_ballisticcalc_exts.v3d cimport V3dT
 
 __all__ = (
     'CythonizedBaseIntegrationEngine',

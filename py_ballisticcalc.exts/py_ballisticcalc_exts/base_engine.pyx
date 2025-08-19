@@ -250,37 +250,6 @@ cdef BaseTrajDataT TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
     else:
         return <BaseTrajDataT>None
 
-cdef void _check_next_time(TrajDataFilter_t * tdf, double time):
-    if time > tdf.time_of_last_record + tdf.time_step:
-        tdf.current_flag |= TrajFlag_t.RANGE
-        tdf.time_of_last_record = time
-
-cdef void _check_mach_crossing(TrajDataFilter_t * tdf, double velocity, double mach):
-    cdef double current_v_mach = velocity / mach
-    if tdf.previous_v_mach > 1 >= current_v_mach:
-        tdf.current_flag |= TrajFlag_t.MACH
-    tdf.previous_v_mach = current_v_mach
-
-cdef void _check_zero_crossing(TrajDataFilter_t * tdf, const V3dT *range_vector_ptr):
-    # Deprecated by new ZERO detection in TrajDataFilter_t_should_record; kept for compatibility if used elsewhere
-    cdef double ca = cos(tdf.look_angle)
-    cdef double sa = sin(tdf.look_angle)
-    cdef double s_prev = tdf.previous_position.y * ca - tdf.previous_position.x * sa
-    cdef double s_curr = range_vector_ptr[0].y * ca - range_vector_ptr[0].x * sa
-    if not (tdf.seen_zero & TrajFlag_t.ZERO_UP):
-        if s_prev < 0.0 and s_curr >= 0.0:
-            tdf.current_flag |= TrajFlag_t.ZERO_UP
-            tdf.seen_zero |= TrajFlag_t.ZERO_UP
-    elif not (tdf.seen_zero & TrajFlag_t.ZERO_DOWN):
-        if s_prev >= 0.0 and s_curr < 0.0:
-            tdf.current_flag |= TrajFlag_t.ZERO_DOWN
-            tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
-
-cdef void _check_apex(TrajDataFilter_t * tdf, const V3dT *velocity_vector_ptr):
-    if velocity_vector_ptr[0].y <= 0 and tdf.previous_velocity.y > 0:
-        # We have crossed the apex
-        tdf.current_flag |= TrajFlag_t.APEX
-
 
 cdef WindSock_t * WindSock_t_create(object winds_py_list):
     """

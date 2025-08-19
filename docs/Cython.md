@@ -106,6 +106,9 @@ It explains naming, error handling, Global Interpreter Lock (GIL) usage, and why
     - If the function is purely a utility that both Cython modules and Python code will call and it neither needs `nogil` nor special exception mapping, `cpdef` is acceptable.
     - If the function is a hot numeric path, manipulates raw buffers/pointers, or needs careful error/status handling, implement a `cdef` nogil core and a `def` wrapper.
 
+## 11. Exception annotation on nogil
 
----
-Generated: August 19, 2025
+`.pxd` declarations for `nogil` functions the module-level functions should have explicit exception values. Cython warns that cimporters calling them without the GIL will require exception checks. If you intend for these functions to never raise Cython exceptions, consider:
+
+    - Declaring them `noexcept` in the `.pxd`, or
+    - Specify an explicit exception value (e.g., `except NULL` or `except False`) where appropriate to avoid implicit exception checks.

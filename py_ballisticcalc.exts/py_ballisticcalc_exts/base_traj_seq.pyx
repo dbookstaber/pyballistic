@@ -35,6 +35,7 @@ cdef extern from "include/basetraj_seq.h" nogil:
 
 __all__ = ['CBaseTrajSeq']
 
+
 cdef class CBaseTrajSeq:
     """
     C Buffer Trajectory Sequence
@@ -59,7 +60,6 @@ cdef class CBaseTrajSeq:
         traj_seq.append(time, px, py, pz, vx, vy, vz, mach)
         trajectory_data = traj_seq[0]  # Lazily converted to BaseTrajData
     """
-    
     # Attributes declared in the matching .pxd; do not redeclare here.
 
     def __cinit__(self):
@@ -120,7 +120,7 @@ cdef class CBaseTrajSeq:
             self._capacity = new_capacity
         
     cdef void _append_c(self, double time, double px, double py, double pz, 
-                     double vx, double vy, double vz, double mach):
+                              double vx, double vy, double vz, double mach):
         """
         Append a new BaseTrajC entry to the buffer.
         
@@ -129,10 +129,11 @@ cdef class CBaseTrajSeq:
             px, py, pz: Position coordinates  
             vx, vy, vz: Velocity coordinates
             mach: Mach number
+
+        Note: This is the C-level `append` implementation and requires the GIL (because it references `self`).
+            Callers who want a nogil fast-path should use the module-level raw helpers `ensure_capacity_try_nogil_raw`
+            and `append_nogil_raw` which operate on raw C pointers and can be used inside with nogil: blocks.
         """
-        # Note: this is the raw C implementation used on hot paths. It is declared
-        # nogil so callers that hold the GIL may release it for faster operation.
-        # Python-level callers should use the thin Python wrapper `append` below.
         self._ensure_capacity(self._length + 1)
 
         # Calculate pointer to new entry using byte arithmetic (self._buffer + self._length)
@@ -148,11 +149,9 @@ cdef class CBaseTrajSeq:
 
         # increment length (must be done while still holding the GIL in typical callers)
         self._length += 1
-    # Nogil try/grow and append helpers are implemented as module-level raw
-    # helpers to avoid touching 'self' without holding the GIL.
 
     def append(self, double time, double px, double py, double pz, 
-                     double vx, double vy, double vz, double mach):
+               double vx, double vy, double vz, double mach):
         """Python wrapper around the cdef hot-path `_append_c`.
 
         Attempt a nogil fast-path that grows and appends using the raw
@@ -163,12 +162,14 @@ cdef class CBaseTrajSeq:
         cdef BaseTrajC* local_buf = self._buffer
         cdef size_t local_cap = self._capacity
         cdef size_t local_len = self._length
-        cdef bint ok = False
+        # Explicitly initialize as bint to avoid mypy/cython literal-to-bool diagnostics
+        cdef bint ok = <bint>0
 
         # Try the nogil fast-path: grow (if needed) and append while holding no GIL.
         # We use local copies and then write them back into `self` on success.
         with nogil:
-            ok = ensure_capacity_try_nogil_raw(&local_buf, &local_cap, <size_t>(local_len + 1))
+            # Cast the C-return value to bint explicitly to satisfy static typing
+            ok = <bint> ensure_capacity_try_nogil_raw(&local_buf, &local_cap, <size_t>(local_len + 1))
             if ok:
                 append_nogil_raw(&local_buf, &local_len, time, px, py, pz, vx, vy, vz, mach)
 
@@ -183,6 +184,16 @@ cdef class CBaseTrajSeq:
         # which will raise MemoryError on failure.
         self._ensure_capacity(self._length + 1)
         self._append_c(time, px, py, pz, vx, vy, vz, mach)
+
+    def reserve(self, Py_ssize_t min_capacity):
+        """Public helper to pre-allocate buffer capacity from Python tests/benchmarks.
+
+        This calls the underlying cdef `_ensure_capacity` which performs the
+        realloc logic. It's small and safe to expose for testing/benching.
+        """
+        if min_capacity < 0:
+            raise ValueError("min_capacity must be non-negative")
+        self._ensure_capacity(<size_t>min_capacity)
     
     cdef BaseTrajC* c_getitem(self, Py_ssize_t idx):
         """
@@ -282,7 +293,7 @@ cdef class CBaseTrajSeq:
         with nogil:
             outp = _interpolate_nogil_raw(_buf, _len, idx, key_kind, key_value)
 
-        if outp == NULL:
+        if outp == <BaseTrajC*>NULL:
             raise IndexError("interpolate_at requires idx with valid neighbors (idx-1, idx, idx+1)")
 
         pos.x = outp.px; pos.y = outp.py; pos.z = outp.pz
@@ -299,7 +310,7 @@ cdef class CBaseTrajSeq:
         return res
 
 # Module-level nogil implementation that operates on raw buffers.
-cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) nogil:
+cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) except NULL nogil:
     cdef Py_ssize_t plength = <Py_ssize_t> length
     cdef BaseTrajC *p0
     cdef BaseTrajC *p1
@@ -337,24 +348,42 @@ cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssiz
     else:
         return <BaseTrajC*>NULL
 
-    if key_kind != 0:
-        time = lagrange_quadratic(key_value, x0, p0.time, x1, p1.time, x2, p2.time)
-    else:
-        time = key_value
+    # Inline Lagrange quadratic interpolation to keep this function fully nogil-safe.
+    cdef double L0, L1, L2, denom0, denom1, denom2, x
+    x = key_value
 
-    px   = lagrange_quadratic(key_value, x0, p0.px,   x1, p1.px,   x2, p2.px)
-    py   = lagrange_quadratic(key_value, x0, p0.py,   x1, p1.py,   x2, p2.py)
-    pz   = lagrange_quadratic(key_value, x0, p0.pz,   x1, p1.pz,   x2, p2.pz)
-    vx   = lagrange_quadratic(key_value, x0, p0.vx,   x1, p1.vx,   x2, p2.vx)
-    vy   = lagrange_quadratic(key_value, x0, p0.vy,   x1, p1.vy,   x2, p2.vy)
-    vz   = lagrange_quadratic(key_value, x0, p0.vz,   x1, p1.vz,   x2, p2.vz)
+    # Compute denominators and check for degenerate points
+    denom0 = (x0 - x1) * (x0 - x2)
+    denom1 = (x1 - x0) * (x1 - x2)
+    denom2 = (x2 - x0) * (x2 - x1)
+    if denom0 == 0.0 or denom1 == 0.0 or denom2 == 0.0:
+        # Degenerate points - cannot interpolate safely
+        return <BaseTrajC*>NULL
+
+    L0 = ((x - x1) * (x - x2)) / denom0
+    L1 = ((x - x0) * (x - x2)) / denom1
+    L2 = ((x - x0) * (x - x1)) / denom2
+
+    if key_kind != 0:
+        time = p0.time * L0 + p1.time * L1 + p2.time * L2
+    else:
+        time = x
+
+    px = p0.px * L0 + p1.px * L1 + p2.px * L2
+    py = p0.py * L0 + p1.py * L1 + p2.py * L2
+    pz = p0.pz * L0 + p1.pz * L1 + p2.pz * L2
+    vx = p0.vx * L0 + p1.vx * L1 + p2.vx * L2
+    vy = p0.vy * L0 + p1.vy * L1 + p2.vy * L2
+    vz = p0.vz * L0 + p1.vz * L1 + p2.vz * L2
 
     if key_kind != 1:
-        mach = lagrange_quadratic(key_value, x0, p0.mach, x1, p1.mach, x2, p2.mach)
+        mach = p0.mach * L0 + p1.mach * L1 + p2.mach * L2
     else:
-        mach = key_value
+        mach = x
 
-    outp = <BaseTrajC*> malloc(<size_t>(sizeof(BaseTrajC)))
+    # Cast sizeof(...) to size_t to match malloc's size parameter and avoid
+    # implicit-int-to-size_t warnings on some compilers/platforms.
+    outp = <BaseTrajC*> malloc(<size_t>sizeof(BaseTrajC))
     if outp == NULL:
         return <BaseTrajC*>NULL
 
@@ -368,14 +397,14 @@ cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssiz
 
 # Nogil-safe raw capacity/append helpers implemented to match .pxd declarations.
 # These operate purely on C pointers and primitive types so they can run without the GIL.
-cdef bint ensure_capacity_try_nogil_raw(BaseTrajC** buf_p, size_t* capacity_p, size_t min_capacity) nogil:
+cdef bint ensure_capacity_try_nogil_raw(BaseTrajC** buf_p, size_t* capacity_p, size_t min_capacity) except False nogil:
     cdef size_t cur = capacity_p[0]
     cdef size_t new_capacity
     cdef BaseTrajC* new_buf
     cdef size_t doubled
 
     if min_capacity <= cur:
-        return True
+        return <bint>1
 
     if cur > 0:
         doubled = <size_t>(cur * 2)
@@ -388,15 +417,15 @@ cdef bint ensure_capacity_try_nogil_raw(BaseTrajC** buf_p, size_t* capacity_p, s
 
     new_buf = <BaseTrajC*>realloc(<void*>buf_p[0], new_capacity * sizeof(BaseTrajC))
     if new_buf == NULL:
-        return False
+        return <bint>0
 
     buf_p[0] = new_buf
     capacity_p[0] = new_capacity
-    return True
+    return <bint>1
 
 
 cdef void append_nogil_raw(BaseTrajC** buf_p, size_t* length_p, double time, double px, double py, double pz,
-                          double vx, double vy, double vz, double mach) nogil:
+                          double vx, double vy, double vz, double mach) noexcept nogil:
     cdef BaseTrajC* entry_ptr = <BaseTrajC*>((<char*>buf_p[0]) + (<size_t>length_p[0]) * sizeof(BaseTrajC))
     entry_ptr.time = time
     entry_ptr.px = px; entry_ptr.py = py; entry_ptr.pz = pz
