@@ -6,7 +6,7 @@ from cython cimport final
 from libc.math cimport fabs, sin, cos, tan, atan, atan2
 
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajData, TrajectoryData
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
@@ -58,7 +58,7 @@ cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_ste
                                               const V3dT *initial_velocity_ptr,
                                               double time_step)
 cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotData_t *shot_data_ptr)
-cdef BaseTrajData TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
+cdef BaseTrajDataT TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
                                                  const V3dT *position_ptr,
                                                  const V3dT *velocity_ptr,
                                                  double mach, double time)
@@ -94,10 +94,9 @@ cdef class CythonizedBaseIntegrationEngine:
     cdef object _zero_angle(CythonizedBaseIntegrationEngine self, object shot_info, object distance)
     cdef tuple _find_max_range(CythonizedBaseIntegrationEngine self, object shot_info, tuple angle_bracket_deg = *)
     cdef object _find_apex(CythonizedBaseIntegrationEngine self, object shot_info)
-    # In contrast to Python engines, _integrate here returns (list[TrajectoryData], Optional[RangeError])
+    # In contrast to Python engines, _integrate here returns (CBaseTrajSeq, Optional[error_str])
     cdef object _integrate(CythonizedBaseIntegrationEngine self,
-                           double range_limit_ft, double range_step_ft, double time_step,
-                           int filter_flags, bint dense_output)
+                           double range_limit_ft, double range_step_ft, double time_step, int filter_flags)
 
 
 cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, const V3dT *velocity_vector_ptr,

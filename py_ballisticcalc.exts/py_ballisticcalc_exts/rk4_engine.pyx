@@ -1,29 +1,20 @@
 """
-Phase 1 Implementation: Cythonized RK4 Integration Engine
+Cythonized RK4 Integration Engine
 
 This module implements the RK4 (Runge-Kutta 4th order) integration engine
-using the Phase 1 C buffer approach. The numeric stepping is performed in C
+with a C buffer for storing steps. The numeric stepping is performed in C
 using malloc/realloc contiguous buffers for optimal performance.
 
-Key Phase 1 Features:
-- Uses CBaseTrajSeq for C buffer storage 
+Key Features:
+- Uses CBaseTrajSeq for C buffer storage of integration steps.
+- Storing each step this way does not measurably reduce speed.
 - Numeric integration performed entirely in C
-- Option A approach: lazy conversion to Python objects via __getitem__
+- Lazy conversion of steps to Python BaseTrajData via __getitem__
 - Compatible with existing Python TrajectoryDataFilter
 
 This replaces the pure Python RK4IntegrationEngine with a Cythonized version
 that achieves significant performance improvements while maintaining API compatibility.
-
-Architecture:
-- Inherits from CythonizedBaseIntegrationEngine  
-- Uses CBaseTrajSeq from shared base_traj_seq module
-- All trajectory calculations performed in C
-- Returns either TrajectoryData list or CBaseTrajSeq for dense output
-
-Performance Notes:
-- RK4 is inherently compute-intensive (4 evaluations per step)
-- C implementation provides substantial speedup over Python
-- Memory allocation is optimized using realloc growth strategy
+Because storing each step is practically costless, we always run with "dense_output=True".
 """
 
 # noinspection PyUnresolvedReferences
@@ -33,7 +24,7 @@ from libc.stdlib cimport malloc, realloc, free
 # noinspection PyUnresolvedReferences
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, fmin, fmax, pow
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajData, TrajectoryData, BaseTrajData_create
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
@@ -44,16 +35,9 @@ from py_ballisticcalc_exts.cy_bindings cimport (
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.base_engine cimport (
     CythonizedBaseIntegrationEngine,
-    TrajDataFilter_t,
 
     WindSock_t_currentVector,
     WindSock_t_vectorForRange,
-
-    create_trajectory_row,
-
-    TrajDataFilter_t_create,
-    TrajDataFilter_t_setup_seen_zero,
-    TrajDataFilter_t_should_record,
 )
 
 from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq
@@ -62,7 +46,6 @@ from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
 import warnings
 
 from py_ballisticcalc.exceptions import RangeError
-from py_ballisticcalc.trajectory_data import HitResult
 
 __all__ = [
     'CythonizedRK4IntegrationEngine',
@@ -78,8 +61,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
 
     cdef object _integrate(CythonizedRK4IntegrationEngine self,
                            double range_limit_ft, double range_step_ft,
-                           double time_step, int filter_flags,
-                           bint dense_output):
+                           double time_step, int filter_flags):
         """
         Creates trajectory data for the specified shot using RK4 integration.
         
@@ -88,18 +70,14 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             range_step_ft: Distance step for recording points
             time_step: Time step for recording points
             filter_flags: Flags for special points to record
-            dense_output: Whether to include dense output for interpolation
         
         Returns:
-            Tuple of (list of TrajectoryData points, optional error) or
             (CBaseTrajSeq, optional error) if dense_output is True
         """
         cdef:
             double velocity, delta_time
             double density_ratio = <double>0.0
             double mach = <double>0.0
-            list ranges = []
-            list step_data = []
             double time = <double>0.0
             double drag = <double>0.0
             double km = <double>0.0
@@ -109,9 +87,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             V3dT gravity_vector
             V3dT wind_vector
             double calc_step = self._shot_s.calc_step
-            
-            TrajDataFilter_t data_filter
-            BaseTrajData data
             
             # Early binding of configuration constants
             double _cMinimumVelocity = self._config_s.cMinimumVelocity
@@ -123,8 +98,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             object termination_reason = None
             double relative_speed
             V3dT _dir_vector
-            int start_integration_step_count
-            object row
+            int integration_step_count = 0
             
             # RK4 specific variables
             V3dT _temp_add_operand
@@ -161,13 +135,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
         # Calculate velocity vector
         velocity_vector = mulS(&_dir_vector, velocity)
 
-        # Create and initialize trajectory data filter
-        data_filter = TrajDataFilter_t_create(filter_flags=filter_flags, range_step=range_step_ft,
-                                              initial_position_ptr=&range_vector,
-                                              initial_velocity_ptr=&velocity_vector,
-                                              time_step=time_step)
-        TrajDataFilter_t_setup_seen_zero(&data_filter, range_vector.y, &self._shot_s)
-
         Atmosphere_t_updateDensityFactorAndMachForAltitude(
             &self._shot_s.atmo,
             self._shot_s.alt0 + range_vector.y,
@@ -175,30 +142,12 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             &mach
         )
         
-        if dense_output:
-            traj_seq = CBaseTrajSeq()
+        traj_seq = CBaseTrajSeq()
 
-        # Check for data at initial point
-        data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-        if data is not None:
-            row = create_trajectory_row(
-                data.time, &data.position, &data.velocity, data.mach,
-                &self._shot_s, density_ratio, drag, data_filter.current_flag)
-            ranges.append(row)
-            last_recorded_range = data.position.x
-        if dense_output:  # Store initial point in trajectory sequence
-            traj_seq.append(
-                time,
-                range_vector.x, range_vector.y, range_vector.z,
-                velocity_vector.x, velocity_vector.y, velocity_vector.z,
-                mach
-            )
-        
         # Trajectory Loop
-        warnings.simplefilter("once")  # avoid multiple warnings
-        start_integration_step_count = self.integration_step_count
-        while (range_vector.x <= range_limit_ft) or (last_recorded_range <= range_limit_ft - 1e-6):
-            self.integration_step_count += 1
+        # Quadratic interpolation requires 3 points, so we will need at least 3 steps
+        while (range_vector.x <= range_limit_ft) or integration_step_count < 3:
+            integration_step_count += 1
 
             # Update wind reading at current point in trajectory
             if range_vector.x >= self._wind_sock.next_range:
@@ -212,6 +161,14 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                 &mach
             )
 
+            # Store point in trajectory sequence
+            traj_seq.append(
+                time,
+                range_vector.x, range_vector.y, range_vector.z,
+                velocity_vector.x, velocity_vector.y, velocity_vector.z,
+                mach
+            )
+            
             # Air resistance seen by bullet is ground velocity minus wind velocity relative to ground
             relative_velocity = sub(&velocity_vector, &wind_vector)
             relative_speed = mag(&relative_velocity)
@@ -277,25 +234,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             velocity = mag(&velocity_vector)
             time += delta_time
             
-            # Record point if needed
-            if dense_output:
-                # Store point in trajectory sequence
-                traj_seq.append(
-                    time,
-                    range_vector.x, range_vector.y, range_vector.z,
-                    velocity_vector.x, velocity_vector.y, velocity_vector.z,
-                    mach
-                )
-            
-            data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-            if data is not None:
-                # Create TrajectoryData row and add to results
-                row = create_trajectory_row(
-                    data.time, &data.position, &data.velocity, data.mach,
-                    &self._shot_s, density_ratio, drag, data_filter.current_flag)
-                ranges.append(row)
-                last_recorded_range = data.position.x
-
             # Check termination conditions
             if (velocity < _cMinimumVelocity
                 or range_vector.y < _cMaximumDrop
@@ -310,33 +248,13 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
                 break
             #endregion
         # Process final data point
-        data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-        if data is not None:
-            # Create TrajectoryData row and add to results
-            row = create_trajectory_row(
-                data.time, &data.position, &data.velocity, data.mach,
-                &self._shot_s, density_ratio, drag, data_filter.current_flag)
-            ranges.append(row)
-        
-        # Ensure at least two data points and include final point if needed
-        if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
-            if len(ranges) > 0 and (<TrajectoryData>ranges[-1]).time == time:
-                pass
-            else:
-                row = create_trajectory_row(
-                    time, &range_vector, &velocity_vector, mach,
-                    &self._shot_s, density_ratio, drag, TrajFlag_t.NONE)
-                ranges.append(row)
-
-        error = None
-        if termination_reason is not None:
-            error = RangeError(termination_reason, ranges)
-        
-        # Return the appropriate output based on dense_output flag
-        if dense_output:
-            return (traj_seq, error)
-        else:
-            return (ranges, error)
+        traj_seq.append(
+            time,
+            range_vector.x, range_vector.y, range_vector.z,
+            velocity_vector.x, velocity_vector.y, velocity_vector.z,
+            mach
+        )
+        return (traj_seq, termination_reason)
         
         
 # This function calculates dv/dt for velocity (v) affected by gravity and drag.

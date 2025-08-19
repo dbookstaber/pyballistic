@@ -3,11 +3,12 @@ from cython cimport final
 from libc.math cimport fabs
 
 from py_ballisticcalc.unit import PreferredUnits
+from py_ballisticcalc.vector import Vector
 import py_ballisticcalc.unit as pyunit
 
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.v3d cimport V3dT, set, mag
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
+# from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 
 # Helper functions to create unit objects
 cdef object _new_feet(double val):
@@ -25,27 +26,40 @@ cdef object _new_ft_lb(double val):
 cdef object _new_lb(double val):
     return pyunit.Weight(float(val), pyunit.Unit.Pound)
 
+cdef object _v3d_to_vector(V3dT v):
+    """Convert C V3dT -> Python Vector"""
+    return Vector(<float>v.x, <float>v.y, <float>v.z)
 
 @final
-cdef class BaseTrajData:
+cdef class BaseTrajDataT:
     __slots__ = ('time', 'position', 'velocity', 'mach')
 
-    def __cinit__(BaseTrajData self, double time, V3dT position, V3dT velocity, double mach):
+    def __cinit__(BaseTrajDataT self, double time, V3dT position, V3dT velocity, double mach):
         self.time = time
         self.position = position
         self.velocity = velocity
         self.mach = mach
-    
+
+    @property
+    def position_vector(self):
+        """Return a Python Vector copy of the internal C V3dT position."""
+        return _v3d_to_vector(self.position)
+
+    @property
+    def velocity_vector(self):
+        """Return a Python Vector copy of the internal C V3dT velocity."""
+        return _v3d_to_vector(self.velocity)
+
     @staticmethod
     def interpolate(str key_attribute, double key_value,
-                   BaseTrajData p0, BaseTrajData p1, BaseTrajData p2):
+                   object p0, object p1, object p2):
         """
         Quadratic (Lagrange) interpolation of a BaseTrajData point.
 
         Args:
             key_attribute (str): Can be 'time', 'mach', or a vector component like 'position.x' or 'velocity.z'.
             key_value (float): The value to interpolate.
-            p0, p1, p2 (BaseTrajData): Any three points surrounding the point where key_attribute==value.
+            p0, p1, p2 (BaseTrajDataT): Any three points surrounding the point where key_attribute==value.
 
         Returns:
             BaseTrajData: The interpolated data point.
@@ -58,56 +72,64 @@ cdef class BaseTrajData:
         cdef:
             double x0, x1, x2
             double time, px, py, pz, vx, vy, vz, mach
-        
+            BaseTrajDataT _p0
+            BaseTrajDataT _p1
+            BaseTrajDataT _p2
+
+        # Cast inputs to BaseTrajDataT for efficient member access
+        _p0 = <BaseTrajDataT> p0
+        _p1 = <BaseTrajDataT> p1
+        _p2 = <BaseTrajDataT> p2
+
         # Get independent variable values
         if key_attribute == 'time':
-            x0 = p0.time
-            x1 = p1.time
-            x2 = p2.time
+            x0 = _p0.time
+            x1 = _p1.time
+            x2 = _p2.time
         elif key_attribute == 'mach':
-            x0 = p0.mach
-            x1 = p1.mach
-            x2 = p2.mach
+            x0 = _p0.mach
+            x1 = _p1.mach
+            x2 = _p2.mach
         elif key_attribute == 'position.x':
-            x0 = p0.position.x
-            x1 = p1.position.x
-            x2 = p2.position.x
+            x0 = _p0.position.x
+            x1 = _p1.position.x
+            x2 = _p2.position.x
         elif key_attribute == 'position.y':
-            x0 = p0.position.y
-            x1 = p1.position.y
-            x2 = p2.position.y
+            x0 = _p0.position.y
+            x1 = _p1.position.y
+            x2 = _p2.position.y
         elif key_attribute == 'position.z':
-            x0 = p0.position.z
-            x1 = p1.position.z
-            x2 = p2.position.z
+            x0 = _p0.position.z
+            x1 = _p1.position.z
+            x2 = _p2.position.z
         elif key_attribute == 'velocity.x':
-            x0 = p0.velocity.x
-            x1 = p1.velocity.x
-            x2 = p2.velocity.x
+            x0 = _p0.velocity.x
+            x1 = _p1.velocity.x
+            x2 = _p2.velocity.x
         elif key_attribute == 'velocity.y':
-            x0 = p0.velocity.y
-            x1 = p1.velocity.y
-            x2 = p2.velocity.y
+            x0 = _p0.velocity.y
+            x1 = _p1.velocity.y
+            x2 = _p2.velocity.y
         elif key_attribute == 'velocity.z':
-            x0 = p0.velocity.z
-            x1 = p1.velocity.z
-            x2 = p2.velocity.z
+            x0 = _p0.velocity.z
+            x1 = _p1.velocity.z
+            x2 = _p2.velocity.z
         else:
             raise AttributeError(f"Cannot interpolate on '{key_attribute}'")
 
         # Lagrange quadratic interpolation for all fields
-        time = lagrange_quadratic(key_value, x0, p0.time, x1, p1.time, x2, p2.time) if key_attribute != 'time' else key_value
-        px = lagrange_quadratic(key_value, x0, p0.position.x, x1, p1.position.x, x2, p2.position.x)
-        py = lagrange_quadratic(key_value, x0, p0.position.y, x1, p1.position.y, x2, p2.position.y)
-        pz = lagrange_quadratic(key_value, x0, p0.position.z, x1, p1.position.z, x2, p2.position.z)
-        vx = lagrange_quadratic(key_value, x0, p0.velocity.x, x1, p1.velocity.x, x2, p2.velocity.x)
-        vy = lagrange_quadratic(key_value, x0, p0.velocity.y, x1, p1.velocity.y, x2, p2.velocity.y)
-        vz = lagrange_quadratic(key_value, x0, p0.velocity.z, x1, p1.velocity.z, x2, p2.velocity.z)
-        mach = lagrange_quadratic(key_value, x0, p0.mach, x1, p1.mach, x2, p2.mach) if key_attribute != 'mach' else key_value
+        time = lagrange_quadratic(key_value, x0, _p0.time, x1, _p1.time, x2, _p2.time) if key_attribute != 'time' else key_value
+        px = lagrange_quadratic(key_value, x0, _p0.position.x, x1, _p1.position.x, x2, _p2.position.x)
+        py = lagrange_quadratic(key_value, x0, _p0.position.y, x1, _p1.position.y, x2, _p2.position.y)
+        pz = lagrange_quadratic(key_value, x0, _p0.position.z, x1, _p1.position.z, x2, _p2.position.z)
+        vx = lagrange_quadratic(key_value, x0, _p0.velocity.x, x1, _p1.velocity.x, x2, _p2.velocity.x)
+        vy = lagrange_quadratic(key_value, x0, _p0.velocity.y, x1, _p1.velocity.y, x2, _p2.velocity.y)
+        vz = lagrange_quadratic(key_value, x0, _p0.velocity.z, x1, _p1.velocity.z, x2, _p2.velocity.z)
+        mach = lagrange_quadratic(key_value, x0, _p0.mach, x1, _p1.mach, x2, _p2.mach) if key_attribute != 'mach' else key_value
         
-        return BaseTrajData_create(time, set(px, py, pz), set(vx, vy, vz), mach)
+        return BaseTrajDataT_create(time, set(px, py, pz), set(vx, vy, vz), mach)
 
-cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) nogil:
+cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) except -1.0 nogil:
     """Quadratic interpolation for y at x, given three points. (Does not depend on order of points.)"""
     cdef:
         double L0, L1, L2
@@ -117,8 +139,8 @@ cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double
     L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
     return y0 * L0 + y1 * L1 + y2 * L2
 
-cdef BaseTrajData BaseTrajData_create(double time, V3dT position, V3dT velocity, double mach):
-    return BaseTrajData(time, position, velocity, mach)
+cdef BaseTrajDataT BaseTrajDataT_create(double time, V3dT position, V3dT velocity, double mach):
+    return BaseTrajDataT(time, position, velocity, mach)
 
 @final
 cdef class TrajectoryData:
@@ -165,7 +187,7 @@ cdef class TrajectoryData:
         self.flag = flag
     
     @staticmethod
-    def from_base_data(object props, BaseTrajData data, int flag=TrajFlag_t.NONE):
+    def from_base_data(object props, BaseTrajDataT data, int flag=TrajFlag_t.NONE):
         """Create a TrajectoryData instance from a BaseTrajData object."""
         cdef double velocity_mag = mag(&data.velocity)
         

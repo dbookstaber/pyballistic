@@ -1,7 +1,7 @@
 from cython cimport final
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, fmin, fmax, pow
 from libc.stdlib cimport malloc, realloc, free
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajData, TrajectoryData, BaseTrajData_create
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData, BaseTrajDataT_create
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
     ShotData_t,
@@ -28,7 +28,6 @@ from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq
 import warnings
 
 from py_ballisticcalc.exceptions import RangeError
-from py_ballisticcalc.trajectory_data import HitResult
 
 __all__ = [
     'CythonizedEulerIntegrationEngine',
@@ -49,8 +48,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
 
     cdef object _integrate(CythonizedEulerIntegrationEngine self,
                            double range_limit_ft, double range_step_ft,
-                           double time_step, int filter_flags,
-                           bint dense_output):
+                           double time_step, int filter_flags):
         """
         Creates trajectory data for the specified shot using Euler integration.
         
@@ -59,7 +57,6 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             range_step_ft: Distance step for recording points
             time_step: Time step for recording points
             filter_flags: Flags for special points to record
-            dense_output: Whether to include dense output for interpolation
         
         Returns:
             Tuple of (list of TrajectoryData points, optional error) or
@@ -82,23 +79,18 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             V3dT wind_vector
             double calc_step = self._shot_s.calc_step
             
-            TrajDataFilter_t data_filter
-            BaseTrajData data
-            
             # Early binding of configuration constants
             double _cMinimumVelocity = self._config_s.cMinimumVelocity
             double _cMinimumAltitude = self._config_s.cMinimumAltitude
             double _cMaximumDrop = -abs(self._config_s.cMaximumDrop)
             
             # Working variables
-            double last_recorded_range = <double>0.0
             object termination_reason = None
             double relative_speed
             V3dT _dir_vector
             V3dT _tv
             V3dT delta_range_vector
-            int start_integration_step_count
-            object row
+            int integration_step_count
 
         # Initialize gravity vector
         gravity_vector.x = <double>0.0
@@ -124,21 +116,11 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         # Calculate velocity vector
         velocity_vector = mulS(&_dir_vector, velocity)
 
-        # Create and initialize trajectory data filter
-        data_filter = TrajDataFilter_t_create(filter_flags=filter_flags, range_step=range_step_ft,
-                                              initial_position_ptr=&range_vector,
-                                              initial_velocity_ptr=&velocity_vector,
-                                              time_step=time_step)
-        TrajDataFilter_t_setup_seen_zero(&data_filter, range_vector.y, &self._shot_s)
-
         # Initialize trajectory sequence for dense output if needed
         traj_seq = CBaseTrajSeq()
 
         # Trajectory Loop
         warnings.simplefilter("once")  # avoid multiple warnings
-        
-        # Record start step count
-        start_integration_step_count = self.integration_step_count
         
         # Update air density and mach at initial altitude
         Atmosphere_t_updateDensityFactorAndMachForAltitude(
@@ -148,22 +130,9 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             &mach
         )
         
-        # Check for data at initial point
-        data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-        if data is not None:
-            row = create_trajectory_row(
-                data.time, &data.position, &data.velocity, data.mach,
-                &self._shot_s, density_ratio, drag, data_filter.current_flag)
-            ranges.append(row)
-            last_recorded_range = data.position.x
-        
-        if dense_output:
-            # Store initial point in trajectory sequence
-            traj_seq.append(time, range_vector.x, range_vector.y, range_vector.z,
-                           velocity_vector.x, velocity_vector.y, velocity_vector.z, mach)
-        
-        while (range_vector.x <= range_limit_ft) or (last_recorded_range <= range_limit_ft - 1e-6):
-            self.integration_step_count += 1
+        # Quadratic interpolation requires 3 points, so we will need at least 3 steps
+        while (range_vector.x <= range_limit_ft) or integration_step_count < 3:
+            integration_step_count += 1
 
             # Update wind reading at current point in trajectory
             if range_vector.x >= self._wind_sock.next_range:
@@ -177,6 +146,10 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
                 &mach
             )
 
+            # Store point in trajectory sequence
+            traj_seq.append(time, range_vector.x, range_vector.y, range_vector.z,
+                            velocity_vector.x, velocity_vector.y, velocity_vector.z, mach)
+            
             # Euler integration step
             
             # 1. Calculate relative velocity (projectile velocity - wind)
@@ -204,21 +177,6 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             velocity = mag(&velocity_vector)
             time += delta_time
 
-            # Record point if needed
-            if dense_output:
-                # Store point in trajectory sequence
-                traj_seq.append(time, range_vector.x, range_vector.y, range_vector.z,
-                               velocity_vector.x, velocity_vector.y, velocity_vector.z, mach)
-            
-            data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-            if data is not None:
-                # Create TrajectoryData row and add to results
-                row = create_trajectory_row(
-                    data.time, &data.position, &data.velocity, data.mach,
-                    &self._shot_s, density_ratio, drag, data_filter.current_flag)
-                ranges.append(row)
-                last_recorded_range = data.position.x
-
             # Check termination conditions
             if (velocity < _cMinimumVelocity
                 or range_vector.y < _cMaximumDrop
@@ -231,32 +189,11 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
                 else:
                     termination_reason = RangeError.MinimumAltitudeReached
                 break
-
-        # Process final data point
-        data = TrajDataFilter_t_should_record(&data_filter, &range_vector, &velocity_vector, mach, time)
-        if data is not None:
-            # Create TrajectoryData row and add to results
-            row = create_trajectory_row(
-                data.time, &data.position, &data.velocity, data.mach,
-                &self._shot_s, density_ratio, drag, data_filter.current_flag)
-            ranges.append(row)
-        
-        # Ensure at least two data points and include final point if needed
-        if (filter_flags and ((len(ranges) < 2) or termination_reason)) or len(ranges) == 1:
-            if len(ranges) > 0 and (<TrajectoryData>ranges[-1]).time == time:
-                pass
-            else:
-                row = create_trajectory_row(
-                    time, &range_vector, &velocity_vector, mach,
-                    &self._shot_s, density_ratio, drag, TrajFlag_t.NONE)
-                ranges.append(row)
-
-        error = None
-        if termination_reason is not None:
-            error = RangeError(termination_reason, ranges)
-            
-        # Return the appropriate output based on dense_output flag
-        if dense_output:
-            return (traj_seq, error)
-        else:
-            return (ranges, error)
+        # Add final data point
+        traj_seq.append(
+            time,
+            range_vector.x, range_vector.y, range_vector.z,
+            velocity_vector.x, velocity_vector.y, velocity_vector.z,
+            mach
+        )
+        return (traj_seq, termination_reason)

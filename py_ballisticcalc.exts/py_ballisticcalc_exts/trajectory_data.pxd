@@ -14,8 +14,8 @@ cdef extern from "include/bclib.h":
         MACH = 4
         RANGE = 8
         APEX = 16
+        ALL = RANGE | ZERO_UP | ZERO_DOWN | MACH | APEX  # 31
         MRT = 32
-        ALL = RANGE | ZERO_UP | ZERO_DOWN | MACH | APEX | MRT  # 63
 
     ctypedef struct BaseTrajData_t:
         double time
@@ -26,13 +26,15 @@ cdef extern from "include/bclib.h":
 # aliases
 # ctypedef BaseTrajDataT BaseTrajData # temporary undeclared
 
-cdef class BaseTrajData:
+# Ensure signature places 'nogil' at the end to match Cython's recommendation
+cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) except -1.0 nogil
+
+cdef class BaseTrajDataT:
     cdef:
         readonly double time
         readonly V3dT position
         readonly V3dT velocity
         readonly double mach
-
 
 cdef class TrajectoryData:
     cdef:
@@ -54,4 +56,4 @@ cdef class TrajectoryData:
         readonly int flag
 
 # Factory helper exposed for use from other Cython modules
-cdef BaseTrajData BaseTrajData_create(double time, V3dT position, V3dT velocity, double mach)
+cdef BaseTrajDataT BaseTrajDataT_create(double time, V3dT position, V3dT velocity, double mach)
