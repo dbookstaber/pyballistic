@@ -249,9 +249,6 @@ cdef class TrajectoryData:
         time = key_value if key_attribute == 'time' else interp_scalar(t0.time, t1.time, t2.time)
         mach = key_value if key_attribute == 'mach' else interp_scalar(t0.mach, t1.mach, t2.mach)
         
-        # Create objects with interpolated values
-        from py_ballisticcalc.unit import Distance, Velocity, Angular, Energy, Weight
-        
         distance = _new_feet(interp_scalar(t0.distance._feet, t1.distance._feet, t2.distance._feet))
         velocity = _new_fps(interp_scalar(t0.velocity._fps, t1.velocity._fps, t2.velocity._fps))
         height = _new_feet(interp_scalar(t0.height._feet, t1.height._feet, t2.height._feet))

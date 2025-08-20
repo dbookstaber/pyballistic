@@ -47,7 +47,7 @@ cdef enum InterpKey:
 
 # Module-level nogil function that operates directly on raw buffer pointers.
 # It returns a malloc'ed BaseTrajC* or NULL on error.
-cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) except NULL nogil
+cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) noexcept nogil
 # Nogil-safe raw capacity/append helpers that operate on C pointers.
 # They mutate the buffer pointer and lengths via provided C pointers.
 cdef bint ensure_capacity_try_nogil_raw(BaseTrajC** buf_p, size_t* capacity_p, size_t min_capacity) except False nogil

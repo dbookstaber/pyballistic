@@ -53,6 +53,7 @@ py-modules = ["py_ballisticcalc_exts"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["py_ballisticcalc_exts*"]
+exclude = ["py_ballisticcalc_exts.include*"]
 
 [project.optional-dependencies]
 dev = ['cython', 'build', 'setuptools', 'cibuildwheel']

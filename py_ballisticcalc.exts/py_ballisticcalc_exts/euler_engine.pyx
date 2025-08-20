@@ -90,7 +90,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             V3dT _dir_vector
             V3dT _tv
             V3dT delta_range_vector
-            int integration_step_count
+            int integration_step_count = 0
 
         # Initialize gravity vector
         gravity_vector.x = <double>0.0

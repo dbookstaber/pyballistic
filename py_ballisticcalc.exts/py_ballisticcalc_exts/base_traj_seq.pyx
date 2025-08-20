@@ -310,7 +310,7 @@ cdef class CBaseTrajSeq:
         return res
 
 # Module-level nogil implementation that operates on raw buffers.
-cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) except NULL nogil:
+cdef BaseTrajC* _interpolate_nogil_raw(BaseTrajC* buffer, size_t length, Py_ssize_t idx, int key_kind, double key_value) noexcept nogil:
     cdef Py_ssize_t plength = <Py_ssize_t> length
     cdef BaseTrajC *p0
     cdef BaseTrajC *p1

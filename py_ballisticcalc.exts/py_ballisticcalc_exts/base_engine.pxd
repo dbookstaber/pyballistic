@@ -4,10 +4,7 @@ from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT
 from py_ballisticcalc_exts.cy_bindings cimport Config_t, Wind_t, ShotData_t
 from py_ballisticcalc_exts.v3d cimport V3dT
 
-__all__ = (
-    'CythonizedBaseIntegrationEngine',
-    'create_trajectory_row',
-)
+# __all__ definitions belong in .pyx/.py files, not .pxd headers.
 
 cdef extern from "include/bclib.h" nogil:
 

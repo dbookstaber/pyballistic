@@ -79,7 +79,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             double density_ratio = <double>0.0
             double mach = <double>0.0
             double time = <double>0.0
-            double drag = <double>0.0
             double km = <double>0.0
             V3dT range_vector
             V3dT velocity_vector
@@ -94,7 +93,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             double _cMaximumDrop = -abs(self._config_s.cMaximumDrop)
             
             # Working variables
-            double last_recorded_range = <double>0.0
             object termination_reason = None
             double relative_speed
             V3dT _dir_vector

@@ -7,18 +7,13 @@ TODO: Needed for zeroing and associated methods:
     >> For these, do we bisect and then pass 3 to BaseTrajDataT.interpolate?
 """
 # noinspection PyUnresolvedReferences
-from cython cimport final
-# noinspection PyUnresolvedReferences
 from cython.cimports.cpython cimport exc
 # noinspection PyUnresolvedReferences
 from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, sqrt, copysign
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport (
-    TrajFlag_t, BaseTrajDataT, TrajectoryData,
-    BaseTrajDataT_create,
-)
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData, BaseTrajDataT_create
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     # types and methods
@@ -36,11 +31,8 @@ from py_ballisticcalc_exts.cy_bindings cimport (
     MachList_t_from_pylist,
     Curve_t_from_pylist,
 )
-
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.v3d cimport (
-    V3dT, add, sub, mag, mulS
-)
+from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
 
 from py_ballisticcalc.unit import Angular, Unit, Velocity, Distance, Energy, Weight
 from py_ballisticcalc.exceptions import ZeroFindingError, RangeError, OutOfRangeError, SolverRuntimeError
@@ -351,7 +343,7 @@ cdef class CythonizedBaseIntegrationEngine:
             result = self._zero_angle(shot_info, distance)
             self._free_trajectory()
             return result
-        except ZeroFindingError as e:
+        except ZeroFindingError:
             self._free_trajectory()
             # Fallback to guaranteed method
             self._init_trajectory(shot_info)
@@ -400,7 +392,7 @@ cdef class CythonizedBaseIntegrationEngine:
         # if dense_output and len(trajectory) >= 2:
         if len(trajectory) >= 2:
             #region Feed step_data through TrajectoryDataFilter to get TrajectoryData
-            for i, d in enumerate(trajectory):
+            for _, d in enumerate(trajectory):
                 # print(f'{i=}: {d=}')
                 tdf.record(BaseTrajData(d.time, d.position_vector, d.velocity_vector, d.mach))
             #endregion
@@ -649,7 +641,6 @@ cdef class CythonizedBaseIntegrationEngine:
             has_restore_cMaximumDrop = 1
         
         cdef:
-            int t_calls = 0
             dict cache = {}
             double inv_phi = <double>0.6180339887498949  # (sqrt(5) - 1) / 2
             double inv_phi_sq = <double>0.38196601125010515  # inv_phi^2
@@ -660,7 +651,6 @@ cdef class CythonizedBaseIntegrationEngine:
             double d = a + inv_phi * h
             double yc, yd
             int iteration
-            object t
             
         def range_for_angle(angle_rad):
             """Returns slant-distance minus slant-error (in feet) for given launch angle in radians."""
@@ -692,7 +682,7 @@ cdef class CythonizedBaseIntegrationEngine:
                 cache[angle_rad] = range_ft
                 return range_ft
                 
-            except RangeError as e:
+            except RangeError:
                 # Trajectory terminated early due to constraints - no valid ZERO_DOWN
                 cache[angle_rad] = -9e9
                 return -9e9
