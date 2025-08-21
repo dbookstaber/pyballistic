@@ -5,7 +5,7 @@ This module provides:
     - CBaseTrajSeq: a contiguous C buffer of BaseTrajC items with append/reserve access.
     - Quadratic Lagrange interpolation on the raw buffer without allocating Python objects.
     - Convenience methods to locate and interpolate a point by an independent variable
-        (time, mach, position.{x,y,z}, velocity.{x,y,z}) and slant height.
+        (time, mach, position.{x,y,z}, velocity.{x,y,z}) and slant_height.
 
 Design note: nogil helpers operate on a tiny C struct view of the sequence to avoid
     passing Python cdef-class instances into nogil code paths.
@@ -47,10 +47,29 @@ ctypedef struct _CBaseTrajSeq_cview:
 
 __all__ = ['CBaseTrajSeq', 'BaseTrajC']
 
+cdef inline double _key_val_from_kind_buf(BaseTrajC* p, int key_kind) noexcept nogil:
+    if key_kind == <int>KEY_TIME:
+        return p.time
+    elif key_kind == <int>KEY_MACH:
+        return p.mach
+    elif key_kind == <int>KEY_POS_X:
+        return p.px
+    elif key_kind == <int>KEY_POS_Y:
+        return p.py
+    elif key_kind == <int>KEY_POS_Z:
+        return p.pz
+    elif key_kind == <int>KEY_VEL_X:
+        return p.vx
+    elif key_kind == <int>KEY_VEL_Y:
+        return p.vy
+    elif key_kind == <int>KEY_VEL_Z:
+        return p.vz
+    return <double>0.0
+
 
 # Interpolation helper (pure C math; safe to call with or without GIL)
-cdef int _interpolate_nogil_raw(_CBaseTrajSeq_cview* seq, Py_ssize_t idx, int key_kind, double key_value, BaseTrajC* out) noexcept:
-    """Interpolate at idx using points (idx-1, idx, idx+1) keyed by key_kind at key_value."""
+cdef int _interpolate_nogil_raw(_CBaseTrajSeq_cview* seq, Py_ssize_t idx, int key_kind, double key_value, BaseTrajC* out) noexcept nogil:
+    """Interpolate at idx using points (idx-1, idx, idx+1), computing new BaseTrajC where out.key_kind==key_value."""
     cdef BaseTrajC* buffer = seq._buffer
     cdef Py_ssize_t plength = <Py_ssize_t> seq._length
     cdef BaseTrajC *p0
@@ -124,29 +143,11 @@ cdef int _interpolate_nogil_raw(_CBaseTrajSeq_cview* seq, Py_ssize_t idx, int ke
     return 1
 
 
-cdef inline double _key_val_from_kind_buf(BaseTrajC* p, int key_kind) noexcept:
-    if key_kind == <int>KEY_TIME:
-        return p.time
-    elif key_kind == <int>KEY_MACH:
-        return p.mach
-    elif key_kind == <int>KEY_POS_X:
-        return p.px
-    elif key_kind == <int>KEY_POS_Y:
-        return p.py
-    elif key_kind == <int>KEY_POS_Z:
-        return p.pz
-    elif key_kind == <int>KEY_VEL_X:
-        return p.vx
-    elif key_kind == <int>KEY_VEL_Y:
-        return p.vy
-    elif key_kind == <int>KEY_VEL_Z:
-        return p.vz
-    return <double>0.0
-
-cdef inline double _slant_val_buf(BaseTrajC* p, double ca, double sa) noexcept:
+cdef inline double _slant_val_buf(BaseTrajC* p, double ca, double sa) noexcept nogil:
+    """Computes the slant_height of a trajectory point `p` given cosine `ca` and sine `sa` of look_angle."""
     return p.py * ca - p.px * sa
 
-cdef Py_ssize_t _bisect_center_idx_buf(BaseTrajC* buf, size_t length, int key_kind, double key_value) noexcept:
+cdef Py_ssize_t _bisect_center_idx_buf(BaseTrajC* buf, size_t length, int key_kind, double key_value) noexcept nogil:
     cdef Py_ssize_t n = <Py_ssize_t>length
     if n < 3:
         return <Py_ssize_t>(-1)
@@ -176,7 +177,7 @@ cdef Py_ssize_t _bisect_center_idx_buf(BaseTrajC* buf, size_t length, int key_ki
         return n - 2
     return lo
 
-cdef Py_ssize_t _bisect_center_idx_slant_buf(BaseTrajC* buf, size_t length, double ca, double sa, double value) noexcept:
+cdef Py_ssize_t _bisect_center_idx_slant_buf(BaseTrajC* buf, size_t length, double ca, double sa, double value) noexcept nogil:
     cdef Py_ssize_t n = <Py_ssize_t>length
     if n < 3:
         return <Py_ssize_t>(-1)
@@ -208,9 +209,9 @@ cdef Py_ssize_t _bisect_center_idx_slant_buf(BaseTrajC* buf, size_t length, doub
 
 
 cdef class CBaseTrajSeq:
-    """Contiguous C buffer of BaseTrajC with fast append and interpolation.
+    """Contiguous C buffer of BaseTrajC points with fast append and interpolation.
 
-    Python-facing access returns lightweight BaseTrajDataT objects; internal
+    Python-facing access lazily creates lightweight BaseTrajDataT objects; internal
         nogil helpers work directly on the C buffer for speed.
     """
     def __cinit__(self):
@@ -282,8 +283,8 @@ cdef class CBaseTrajSeq:
         """Number of points in the sequence."""
         return <Py_ssize_t> self._length
 
-    def __getitem__(self, idx):
-        """Return BaseTrajDataT for the given index (supports negative indices)."""
+    def __getitem__(self, idx: int) -> BaseTrajDataT:
+        """Return BaseTrajDataT for the given index.  Supports negative indices."""
         cdef V3dT position
         cdef V3dT velocity
         cdef BaseTrajC* entry_ptr
@@ -350,12 +351,12 @@ cdef class CBaseTrajSeq:
         """Interpolate using points (idx-1, idx, idx+1) keyed by key_attribute at key_value."""
         return self._interpolate_at_c(idx, key_attribute, key_value)
 
-    def get_at(self, str key_attribute, double key_value, start_from=None, start_from_time=None):
-        """Get BaseTrajDataT where key_attribute == key_value (quadratic interpolation).
+    def get_at(self, str key_attribute, double key_value, start_from_time=None):
+        """Get BaseTrajDataT where key_attribute == key_value (via quadratic interpolation).
 
         If start_from_time > 0, search is centered from the first point where time >= start_from_time,
         and proceeds forward or backward depending on local direction, mirroring
-        trajectory_data.HitResult.get_at.
+        trajectory_data.HitResult.get_at().
         """
         cdef int key_kind
         cdef Py_ssize_t n
@@ -399,8 +400,6 @@ cdef class CBaseTrajSeq:
         sft = <double>0.0
         if start_from_time is not None:
             sft = <double>float(start_from_time)
-        elif start_from is not None:
-            sft = <double>float(start_from)
         if sft > <double>0.0 and key_kind != <int>KEY_TIME:
             buf = self._buffer
             start_idx = <Py_ssize_t>0

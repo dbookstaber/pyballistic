@@ -143,7 +143,7 @@ cdef BaseTrajDataT BaseTrajDataT_create(double time, V3dT position, V3dT velocit
     return BaseTrajDataT(time, position, velocity, mach)
 
 @final
-cdef class TrajectoryData:
+cdef class TrajectoryDataT:
     __slots__ = ('time', 'distance', 'velocity',
                  'mach', 'height', 'slant_height', 'drop_adj',
                  'windage', 'windage_adj', 'slant_distance',
@@ -151,7 +151,7 @@ cdef class TrajectoryData:
 
     _fields = __slots__
 
-    def __cinit__(TrajectoryData self,
+    def __cinit__(TrajectoryDataT self,
                     double time,
                     object distance,
                     object velocity,
@@ -191,7 +191,7 @@ cdef class TrajectoryData:
         """Create a TrajectoryData instance from a BaseTrajData object."""
         cdef double velocity_mag = mag(&data.velocity)
         
-        return TrajectoryData(
+        return TrajectoryDataT(
             time=data.time,
             distance=_new_feet(data.position.x),
             velocity=_new_fps(velocity_mag),
@@ -212,7 +212,7 @@ cdef class TrajectoryData:
     
     @staticmethod
     def interpolate(str key_attribute, double key_value,
-                   TrajectoryData t0, TrajectoryData t1, TrajectoryData t2, int flag):
+                   TrajectoryDataT t0, TrajectoryDataT t1, TrajectoryDataT t2, int flag):
         """
         Quadratic (Lagrange) interpolation of a TrajectoryData point.
         
@@ -263,14 +263,14 @@ cdef class TrajectoryData:
         energy = _new_ft_lb(interp_scalar(t0.energy._ft_lb, t1.energy._ft_lb, t2.energy._ft_lb))
         ogw = _new_lb(interp_scalar(t0.ogw._lb, t1.ogw._lb, t2.ogw._lb))
         
-        return TrajectoryData(
+        return TrajectoryDataT(
             time, distance, velocity, mach,
             height, slant_height, drop_adj,
             windage, windage_adj, slant_distance,
             angle, density_ratio, drag, energy, ogw, flag
         )
 
-    def formatted(TrajectoryData self) -> tuple[str, ...]:
+    def formatted(TrajectoryDataT self) -> tuple[str, ...]:
         """
         :return: matrix of formatted strings for each value of trajectory in default prefer_units
         """
@@ -300,7 +300,7 @@ cdef class TrajectoryData:
             f"{self.flag}"  # TODO: fix flag.name
         )
 
-    def in_def_units(TrajectoryData self) -> tuple[float, ...]:
+    def in_def_units(TrajectoryDataT self) -> tuple[float, ...]:
         """
         :return: matrix of floats of the trajectory in default prefer_units
         """

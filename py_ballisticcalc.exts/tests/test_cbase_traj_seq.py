@@ -26,9 +26,7 @@ def test_interpolate_bounds_checks():
 
     # Error cases: out-of-range or no neighbors
     with pytest.raises(IndexError):
-        seq.interpolate_at(0, "time", 0.5)
-    with pytest.raises(IndexError):
-        seq.interpolate_at(2, "time", 1.5)
+        seq.interpolate_at(3, "time", 1.5)
 
 
 def test_append_and_len_and_getitem():

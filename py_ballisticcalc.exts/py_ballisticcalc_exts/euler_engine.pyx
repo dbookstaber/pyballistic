@@ -1,7 +1,5 @@
 from cython cimport final
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, fmin, fmax, pow
-from libc.stdlib cimport malloc, realloc, free
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData, BaseTrajDataT_create
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
     ShotProps_t,
@@ -10,16 +8,8 @@ from py_ballisticcalc_exts.cy_bindings cimport (
 )
 from py_ballisticcalc_exts.base_engine cimport (
     CythonizedBaseIntegrationEngine,
-    TrajDataFilter_t,
-
     WindSock_t_currentVector,
     WindSock_t_vectorForRange,
-
-    create_trajectory_row,
-
-    TrajDataFilter_t_create,
-    TrajDataFilter_t_setup_seen_zero,
-    TrajDataFilter_t_should_record,
 )
 
 from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
@@ -46,7 +36,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         """Calculate time step based on current projectile speed."""
         return base_step / fmax(<double>1.0, velocity)
 
-    cdef object _integrate(CythonizedEulerIntegrationEngine self,
+    cdef object _integrate(CythonizedEulerIntegrationEngine self, ShotProps_t *shot_props_ptr,
                            double range_limit_ft, double range_step_ft,
                            double time_step, int filter_flags):
         """

@@ -80,6 +80,7 @@ typedef struct {
     double calc_step;
     double muzzle_velocity;
     double stability_coefficient;
+    int filter_flags;
     Atmosphere_t atmo;
 } ShotProps_t;
 

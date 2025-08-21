@@ -209,7 +209,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         Finds the maximum range along the look_angle and the launch angle to reach it.
 
         Args:
-            props (_ShotProps): The shot information: gun, ammo, environment, look_angle.
+            props (ShotProps): The shot information: gun, ammo, environment, look_angle.
             angle_bracket_deg (Tuple[float, float], optional): The angle bracket in degrees to search for max range.
                                                                Defaults to (0, 90).
 
@@ -265,7 +265,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             using SciPy's root_scalar.
 
         Args:
-            props (_ShotProps): The shot information.
+            props (ShotProps): The shot information.
             distance (Distance): Slant distance to the target.
             lofted (bool, optional): If True, find the higher angle that hits the zero point.
 
@@ -344,7 +344,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             Falls back on ._find_zero_angle().
 
         Args:
-            props (_ShotProps): Shot parameters
+            props (ShotProps): Shot parameters
             distance (Distance): Sight distance to zero (i.e., along Shot.look_angle),
                                  a.k.a. slant range to target.
 

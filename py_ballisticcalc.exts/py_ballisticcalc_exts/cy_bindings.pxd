@@ -79,6 +79,7 @@ cdef extern from "include/bclib.h" nogil:
         double calc_step
         double muzzle_velocity
         double stability_coefficient
+        int filter_flags
         Atmosphere_t atmo
 
     void ShotProps_t_free(ShotProps_t *shot_props_ptr)

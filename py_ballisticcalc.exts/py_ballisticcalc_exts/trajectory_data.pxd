@@ -23,9 +23,6 @@ cdef extern from "include/bclib.h":
         V3dT velocity
         double mach
 
-# aliases
-# ctypedef BaseTrajDataT BaseTrajData # temporary undeclared
-
 # Ensure signature places 'nogil' at the end to match Cython's recommendation
 cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) except -1.0 nogil
 
@@ -36,7 +33,7 @@ cdef class BaseTrajDataT:
         readonly V3dT velocity
         readonly double mach
 
-cdef class TrajectoryData:
+cdef class TrajectoryDataT:
     cdef:
         readonly double time
         readonly object distance
@@ -54,6 +51,9 @@ cdef class TrajectoryData:
         readonly object energy
         readonly object ogw
         readonly int flag
+
+    # @staticmethod
+    # cdef from_BaseTrajDataT(BaseTrajDataT base_data)
 
 # Factory helper exposed for use from other Cython modules
 cdef BaseTrajDataT BaseTrajDataT_create(double time, V3dT position, V3dT velocity, double mach)

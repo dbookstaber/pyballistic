@@ -410,7 +410,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Internal function to find the maximum slant range via golden-section search.
 
         Args:
-            props (_ShotProps): The shot information: gun, ammo, environment, look_angle.
+            props (ShotProps): The shot information: gun, ammo, environment, look_angle.
             angle_bracket_deg (Tuple[float, float], optional): The angle bracket in degrees to search for max range.
                                                                Defaults to (0, 90).
 
@@ -505,7 +505,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Internal implementation to find the apex of the trajectory.
 
         Args:
-            props (_ShotProps): The shot properties.
+            props (ShotProps): The shot properties.
 
         Returns:
             TrajectoryData at the trajectory's apex (where velocity.y goes from positive to negative).            
@@ -528,7 +528,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             Handles edge cases.
 
         Args:
-            props (_ShotProps): The shot information, with look_angle to the target.
+            props (ShotProps): The shot information, with look_angle to the target.
             distance (Distance): The slant distance to the target.
 
         Returns:
@@ -581,7 +581,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             using Ridder's method for guaranteed convergence.
 
         Args:
-            props (_ShotProps): The shot information.
+            props (ShotProps): The shot information.
             distance (Distance): The distance to the target.
             lofted (bool, optional): If True, find the higher angle that hits the zero point.
 
@@ -705,7 +705,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Iterative algorithm to find barrel elevation needed for a particular zero
 
         Args:
-            props (_ShotProps): Shot parameters
+            props (ShotProps): Shot parameters
             distance (Distance): Sight distance to zero (i.e., along Shot.look_angle),
                                  a.k.a. slant range to target.
 
