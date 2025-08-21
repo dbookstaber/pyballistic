@@ -13,17 +13,21 @@ from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
 from libc.math cimport fabs, sin, cos, tan, atan, atan2, sqrt, copysign
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData, BaseTrajDataT_create
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, BaseTrajDataT_create
+import py_ballisticcalc_exts.trajectory_data as td
+# noinspection PyUnresolvedReferences
+from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
+from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq, BaseTrajC
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     # types and methods
     Config_t,
     Wind_t,
     Atmosphere_t,
-    ShotData_t,
-    ShotData_t_free,
-    ShotData_t_spinDrift,
-    ShotData_t_updateStabilityCoefficient,
+    ShotProps_t,
+    ShotProps_t_free,
+    ShotProps_t_spinDrift,
+    ShotProps_t_updateStabilityCoefficient,
     Wind_t_from_python,
     Wind_t_to_V3dT,
     # factory funcs
@@ -31,8 +35,6 @@ from py_ballisticcalc_exts.cy_bindings cimport (
     MachList_t_from_pylist,
     Curve_t_from_pylist,
 )
-# noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
 
 from py_ballisticcalc.unit import Angular, Unit, Velocity, Distance, Energy, Weight
 from py_ballisticcalc.exceptions import ZeroFindingError, RangeError, OutOfRangeError, SolverRuntimeError
@@ -58,12 +60,12 @@ cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_ste
         0.0, 0.0,
     )
 
-cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotData_t *shot_data_ptr):
+cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotProps_t *shot_props_ptr):
     if height >= 0:
         tdf.seen_zero |= TrajFlag_t.ZERO_UP
-    elif height < 0 and shot_data_ptr.barrel_elevation < shot_data_ptr.look_angle:
+    elif height < 0 and shot_props_ptr.barrel_elevation < shot_props_ptr.look_angle:
         tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
-    tdf.look_angle = shot_data_ptr.look_angle
+    tdf.look_angle = shot_props_ptr.look_angle
 
 cdef BaseTrajDataT TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
                                                  const V3dT *position_ptr,
@@ -338,6 +340,17 @@ cdef class CythonizedBaseIntegrationEngine:
             raise
 
     def zero_angle(CythonizedBaseIntegrationEngine self, object shot_info, object distance) -> Angular:
+        """
+        Finds the barrel elevation needed to hit sight line at a specific distance.
+        First tries iterative approach; if that fails falls back on _find_zero_angle.
+
+        Args:
+            shot_info (Shot): The shot information.
+            distance (Distance): The distance to the target.
+
+        Returns:
+            Angular: Barrel elevation to hit height zero at zero distance along sight line
+        """
         self._init_trajectory(shot_info)
         try:
             result = self._zero_angle(shot_info, distance)
@@ -359,10 +372,24 @@ cdef class CythonizedBaseIntegrationEngine:
                   object shot_info,
                   object max_range,
                   object dist_step = None,
-                  double time_step = 0.0,
-                  TrajFlag_t filter_flags = TrajFlag_t.NONE,
+                  float time_step = 0.0,
+                  int filter_flags = 0,
                   bint dense_output = False,
-                  **kwargs) -> object:
+                  **kwargs) -> HitResult:
+        """
+        Integrates the trajectory for the given shot.
+
+        Args:
+            shot_info (Shot): The shot information.
+            max_range (Distance): Maximum range of the trajectory (if float then treated as feet).
+            dist_step (Optional[Distance]): Distance step for recording RANGE TrajectoryData rows.
+            time_step (float, optional): Time step for recording trajectory data. Defaults to 0.0.
+            filter_flags (Union[TrajFlag, int], optional): Flags to filter trajectory data. Defaults to TrajFlag.RANGE.
+            dense_output (bool, optional): If True, HitResult will save BaseTrajData for interpolating TrajectoryData.
+
+        Returns:
+            HitResult: Object for describing the trajectory.
+        """
         range_limit_ft = max_range._feet
         range_step_ft = dist_step._feet if dist_step is not None else range_limit_ft
 
@@ -404,7 +431,7 @@ cdef class CythonizedBaseIntegrationEngine:
         if self._wind_sock is not NULL:
             WindSock_t_free(self._wind_sock)
             self._wind_sock = NULL
-        ShotData_t_free(&self._shot_s)
+        ShotProps_t_free(&self._shot_s)
 
         # After free_trajectory(&self._shot_s), it's good practice to ensure
         # the internal pointers within _shot_s are indeed NULLIFIED for future checks,
@@ -422,7 +449,7 @@ cdef class CythonizedBaseIntegrationEngine:
         self.gravity_vector = V3dT(.0, self._config_s.cGravityConstant, .0)
 
         self._table_data = shot_info.ammo.dm.drag_table
-        self._shot_s = ShotData_t(
+        self._shot_s = ShotProps_t(
             bc=shot_info.ammo.dm.BC,
             curve=Curve_t_from_pylist(self._table_data),
             mach_list=MachList_t_from_pylist(self._table_data),
@@ -450,8 +477,8 @@ cdef class CythonizedBaseIntegrationEngine:
             )
         )
         self._shot_s.muzzle_velocity = shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp)._fps
-        if ShotData_t_updateStabilityCoefficient(&self._shot_s) < 0:
-            raise ZeroDivisionError("Zero division detected in ShotData_t_updateStabilityCoefficient")
+        if ShotProps_t_updateStabilityCoefficient(&self._shot_s) < 0:
+            raise ZeroDivisionError("Zero division detected in ShotProps_t_updateStabilityCoefficient")
 
         self._wind_sock = WindSock_t_create(shot_info.winds)
         if self._wind_sock is NULL:
@@ -746,13 +773,20 @@ cdef class CythonizedBaseIntegrationEngine:
         
         return apex
 
-    cdef object _zero_angle(CythonizedBaseIntegrationEngine self, object shot_info, object distance):
+    cdef object _zero_angle(CythonizedBaseIntegrationEngine self, object props, object distance):
         """
-        Iterative algorithm to find barrel elevation needed for a particular zero.
-        Enhanced version with better convergence and error handling.
+        Iterative algorithm to find barrel elevation needed for a particular zero
+
+        Args:
+            props (_ShotProps): Shot parameters
+            distance (Distance): Sight distance to zero (i.e., along Shot.look_angle),
+                                 a.k.a. slant range to target.
+
+        Returns:
+            Angular: Barrel elevation to hit height zero at zero distance along sight line
         """
         # Get initialization data using the new method
-        cdef tuple init_data = self._init_zero_calculation(shot_info, distance)
+        cdef tuple init_data = self._init_zero_calculation(props, distance)
         cdef:
             int status = <int>init_data[0]
             double look_angle_rad = <double>init_data[1]
@@ -765,6 +799,7 @@ cdef class CythonizedBaseIntegrationEngine:
             return _new_rad(look_angle_rad)
 
         cdef:
+            BaseTrajDataT hit
             # early bindings
             double _cZeroFindingAccuracy = self._config_s.cZeroFindingAccuracy
             int _cMaxIterations = <int>self._config_s.cMaxIterations
@@ -797,25 +832,26 @@ cdef class CythonizedBaseIntegrationEngine:
             self._config_s.cMaximumDrop = required_drop_ft
             has_restore_cMaximumDrop = 1
         
-        if (self._config_s.cMinimumAltitude - shot_info.atmo.altitude._feet) > required_drop_ft:
+        if (self._config_s.cMinimumAltitude - props.atmo.altitude._feet) > required_drop_ft:
             restore_cMinimumAltitude = self._config_s.cMinimumAltitude
-            self._config_s.cMinimumAltitude = shot_info.atmo.altitude._feet - required_drop_ft
+            self._config_s.cMinimumAltitude = props.atmo.altitude._feet - required_drop_ft
             has_restore_cMinimumAltitude = 1
 
         while iterations_count < _cMaxIterations:
             # Check height of trajectory at the zero distance (using current barrel_elevation)
-            t = self._integrate(target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)[0][-1]
-            
-            if t.time == 0.0:
+            h = self._integrate(target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+            hit = (<CBaseTrajSeq>h[0]).interpolate_at(-1, 'position.x', target_x_ft)
+
+            if hit.time == 0.0:
                 # Integrator returned initial point - consider removing constraints
                 break
 
-            current_distance = t.distance._feet  # Horizontal distance
+            current_distance = hit.position.x  # Horizontal distance along X
             if 2 * current_distance < target_x_ft and self._shot_s.barrel_elevation == 0.0 and look_angle_rad < 1.5:
                 # Degenerate case: little distance and zero elevation; try with some elevation
                 self._shot_s.barrel_elevation = 0.01
                 continue
-
+            t = td.TrajectoryData.from_base_data(props, hit, TrajFlag_t.NONE)
             height_diff_ft = t.slant_height._feet
             look_dist_ft = t.slant_distance._feet
             range_diff_ft = look_dist_ft - slant_range_ft
@@ -900,12 +936,12 @@ cdef class CythonizedBaseIntegrationEngine:
 
 
 cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, const V3dT *velocity_vector_ptr,
-                                  double mach, const ShotData_t *shot_data_ptr,
+                                  double mach, const ShotProps_t *shot_props_ptr,
                                   double density_ratio, double drag, int flag):
 
     cdef:
-        double look_angle = shot_data_ptr.look_angle
-        double spin_drift = ShotData_t_spinDrift(shot_data_ptr, time)
+        double look_angle = shot_props_ptr.look_angle
+        double spin_drift = ShotProps_t_spinDrift(shot_props_ptr, time)
         double velocity = mag(velocity_vector_ptr)
         double windage = range_vector_ptr.z + spin_drift
         double drop_adjustment = getCorrection(range_vector_ptr.x, range_vector_ptr.y)
@@ -916,56 +952,43 @@ cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, con
 
     drop_adjustment -= (look_angle if range_vector_ptr.x else 0)
 
-    return TrajectoryData(
-        time=time,
-        distance=_new_feet(range_vector_ptr.x),
-        velocity=_new_fps(velocity),
-        mach=velocity / mach,
-        height=_new_feet(range_vector_ptr.y),
-        slant_height=_new_feet(range_vector_ptr.y * look_angle_cos - range_vector_ptr.x * look_angle_sin),
-        drop_adj=_new_rad(drop_adjustment),
-        windage=_new_feet(windage),
-        windage_adj=_new_rad(windage_adjustment),
-        slant_distance=_new_feet(range_vector_ptr.x * look_angle_cos + range_vector_ptr.y * look_angle_sin),
-        angle=_new_rad(trajectory_angle),
-        density_ratio=density_ratio,
-        drag=drag,
-        energy=_new_ft_lb(calculateEnergy(shot_data_ptr.weight, velocity)),
-        ogw=_new_lb(calculateOgw(shot_data_ptr.weight, velocity)),
-        flag=flag
+    # Note: Cython cdef class constructors don't support keyword args reliably from Cython.
+    # Pass all fields positionally in the defined order.
+    return td.TrajectoryData(
+        time,
+        _new_feet(range_vector_ptr.x),
+        _new_fps(velocity),
+        velocity / mach,
+        _new_feet(range_vector_ptr.y),
+        _new_feet(range_vector_ptr.y * look_angle_cos - range_vector_ptr.x * look_angle_sin),
+        _new_rad(drop_adjustment),
+        _new_feet(windage),
+        _new_rad(windage_adjustment),
+        _new_feet(range_vector_ptr.x * look_angle_cos + range_vector_ptr.y * look_angle_sin),
+        _new_rad(trajectory_angle),
+        density_ratio,
+        drag,
+        _new_ft_lb(calculateEnergy(shot_props_ptr.weight, velocity)),
+        _new_lb(calculateOgw(shot_props_ptr.weight, velocity)),
+        flag
     )
 
 
 cdef object _new_feet(double v):
-    d = object.__new__(Distance)
-    d._value = v * 12
-    d._defined_units = Unit.Foot
-    return d
+    return Distance(float(v), Unit.Foot)
 
 
 cdef object _new_fps(double v):
-    d = object.__new__(Velocity)
-    d._value = v / 3.2808399
-    d._defined_units = Unit.FPS
-    return d
+    return Velocity(float(v), Unit.FPS)
 
 
 cdef object _new_rad(double v):
-    d = object.__new__(Angular)
-    d._value = v
-    d._defined_units = Unit.Radian
-    return d
+    return Angular(float(v), Unit.Radian)
 
 
 cdef object _new_ft_lb(double v):
-    d = object.__new__(Energy)
-    d._value = v
-    d._defined_units = Unit.FootPound
-    return d
+    return Energy(float(v), Unit.FootPound)
 
 
 cdef object _new_lb(double v):
-    d = object.__new__(Weight)
-    d._value = v / 0.000142857143
-    d._defined_units = Unit.Pound
-    return d
+    return Weight(float(v), Unit.Pound)

@@ -42,3 +42,15 @@ def test_interpolate_at_time_and_position():
     interpolated2 = seq.interpolate_at(1, 'position.x', 15.0)
     assert interpolated2.time == pytest.approx(1.5)
     assert interpolated2.position_vector.x == pytest.approx(15.0)
+
+
+def test_interpolate_at_accepts_negative_index_middle():
+    seq = CBaseTrajSeq()
+    # three points, so -2 should normalize to 1 (the middle)
+    seq.append(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5)
+    seq.append(1.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6)
+    seq.append(2.0, 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7)
+
+    mid = seq.interpolate_at(-2, 'time', 1.5)
+    assert mid.time == pytest.approx(1.5)
+    assert mid.position_vector.x == pytest.approx(15.0)

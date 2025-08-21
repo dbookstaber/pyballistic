@@ -9,3 +9,4 @@
 .coverage
 htmlcov
 debug/*
+compile_flags.txt

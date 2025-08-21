@@ -113,3 +113,12 @@ It explains naming, error handling, Global Interpreter Lock (GIL) usage, and why
 
     - Declaring them `noexcept` in the `.pxd` is the clearest way to indicate that a function will not propagate a Python exception.
     - Specify an explicit exception value (e.g., `except NULL` or `except False`) where appropriate to avoid implicit exception checks if the function *can* indicate an error via its return value but does not raise a Python exception.
+
+## 12. C helpers
+
+For any object in the hot path we create a C helper as follows:
+
+1. Define a C struct in `bclib.h`, and list helper functions.  Example: `typedef struct ... ShotProps_t` and `void ShotProps_t_free(ShotProps_t *shot_props_ptr)`
+2. Implement any helper functions in `bclib.c`.  These are typically to allocate and free memory.  Example: `ShotProps_t_free()`.
+3. Copy the `struct` as a `ctypedef` to `cy_bindings.pxd`.  (This could be automated at compile time but is not at present.)
+4. Put any conversion logic in `cy_bindings.pyx`.  E.g., `cdef ShotProps_t ShotProps_t_from_pyshot(object shot_props):`

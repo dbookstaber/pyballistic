@@ -4,8 +4,8 @@ from libc.stdlib cimport malloc, realloc, free
 from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, TrajectoryData, BaseTrajDataT_create
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
-    ShotData_t,
-    ShotData_t_dragByMach,
+    ShotProps_t,
+    ShotProps_t_dragByMach,
     Atmosphere_t_updateDensityFactorAndMachForAltitude,
 )
 from py_ballisticcalc_exts.base_engine cimport (
@@ -160,7 +160,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             delta_time = self.time_step(calc_step, relative_speed)
             
             # 3. Calculate drag coefficient and drag force
-            km = density_ratio * ShotData_t_dragByMach(&self._shot_s, relative_speed / mach)
+            km = density_ratio * ShotProps_t_dragByMach(&self._shot_s, relative_speed / mach)
             drag = km * relative_speed
             
             # 4. Apply drag and gravity to velocity

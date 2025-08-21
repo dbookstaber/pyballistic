@@ -28,22 +28,18 @@ from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     Config_t,
-    ShotData_t,
-    ShotData_t_dragByMach,
+    ShotProps_t,
+    ShotProps_t_dragByMach,
     Atmosphere_t_updateDensityFactorAndMachForAltitude,
 )
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.base_engine cimport (
     CythonizedBaseIntegrationEngine,
-
     WindSock_t_currentVector,
     WindSock_t_vectorForRange,
 )
-
 from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq
 from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
-
-import warnings
 
 from py_ballisticcalc.exceptions import RangeError
 
@@ -72,7 +68,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             filter_flags: Flags for special points to record
         
         Returns:
-            (CBaseTrajSeq, optional error) if dense_output is True
+            (CBaseTrajSeq, optional error)
         """
         cdef:
             double velocity, delta_time
@@ -172,7 +168,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             relative_speed = mag(&relative_velocity)
 
             delta_time = calc_step
-            km = density_ratio * ShotData_t_dragByMach(&self._shot_s, relative_speed / mach)
+            km = density_ratio * ShotProps_t_dragByMach(&self._shot_s, relative_speed / mach)
             drag = km * relative_speed
 
             #region RK4 integration

@@ -681,6 +681,17 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         )
 
     def zero_angle(self, shot_info: Shot, distance: Distance) -> Angular:
+        """
+        Finds the barrel elevation needed to hit sight line at a specific distance.
+        First tries iterative approach; if that fails falls back on _find_zero_angle.
+
+        Args:
+            shot_info (Shot): The shot information.
+            distance (Distance): The distance to the target.
+
+        Returns:
+            Angular: Barrel elevation to hit height zero at zero distance along sight line
+        """
         props = self._init_trajectory(shot_info)
         try:
             return self._zero_angle(props, distance)
@@ -817,8 +828,8 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             shot_info (Shot): The shot information.
             max_range (Distance): Maximum range of the trajectory (if float then treated as feet).
             dist_step (Optional[Distance]): Distance step for recording RANGE TrajectoryData rows.
-            filter_flags (Union[TrajFlag, int], optional): Flags to filter trajectory data. Defaults to TrajFlag.RANGE.
             time_step (float, optional): Time step for recording trajectory data. Defaults to 0.0.
+            filter_flags (Union[TrajFlag, int], optional): Flags to filter trajectory data. Defaults to TrajFlag.RANGE.
             dense_output (bool, optional): If True, HitResult will save BaseTrajData for interpolating TrajectoryData.
 
         Returns:

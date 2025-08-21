@@ -1,7 +1,7 @@
 # pxd for py_ballisticcalc_exts.base_engine
 
 from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT
-from py_ballisticcalc_exts.cy_bindings cimport Config_t, Wind_t, ShotData_t
+from py_ballisticcalc_exts.cy_bindings cimport Config_t, Wind_t, ShotProps_t
 from py_ballisticcalc_exts.v3d cimport V3dT
 
 # __all__ definitions belong in .pyx/.py files, not .pxd headers.
@@ -40,7 +40,7 @@ cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_ste
                                               const V3dT *initial_position_ptr,
                                               const V3dT *initial_velocity_ptr,
                                               double time_step)
-cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotData_t *shot_data_ptr)
+cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotProps_t *shot_props_ptr)
 cdef BaseTrajDataT TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
                                                  const V3dT *position_ptr,
                                                  const V3dT *velocity_ptr,
@@ -59,7 +59,7 @@ cdef class CythonizedBaseIntegrationEngine:
         V3dT gravity_vector
         WindSock_t * _wind_sock
         Config_t _config_s # Declared here
-        ShotData_t _shot_s # Declared here
+        ShotProps_t _shot_s # Declared here
 
     # cdef void __dealloc__(CythonizedBaseIntegrationEngine self) # Uncomment if you want to declare __dealloc__
     cdef double get_calc_step(CythonizedBaseIntegrationEngine self)
@@ -83,7 +83,7 @@ cdef class CythonizedBaseIntegrationEngine:
 
 
 cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, const V3dT *velocity_vector_ptr,
-                                  double mach, const ShotData_t * shot_data_ptr,
+                                  double mach, const ShotProps_t * shot_props_ptr,
                                   double density_ratio, double drag, int flag)
 
 cdef object _new_feet(double v)
