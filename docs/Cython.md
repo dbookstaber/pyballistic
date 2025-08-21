@@ -72,6 +72,7 @@ It explains naming, error handling, Global Interpreter Lock (GIL) usage, and why
 - `nogil` is only legal on functions that return C types or are annotated to not return Python objects.
 - `with nogil:` blocks are used to call `nogil` helpers but the block cannot contain Python operations.
 - When calling `malloc` in `nogil`, check the return value and `return NULL` on failure; do not raise Python exceptions inside `nogil`.
+- In `nogil` code you can’t safely pass Python `cdef class` instances (they carry Python object headers and refcounts).
 
 ## 8. Why this approach
 
