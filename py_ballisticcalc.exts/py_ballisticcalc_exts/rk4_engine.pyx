@@ -1,28 +1,14 @@
 """
 Cythonized RK4 Integration Engine
 
-This module implements the RK4 (Runge-Kutta 4th order) integration engine
-with a C buffer for storing steps. The numeric stepping is performed in C
-using malloc/realloc contiguous buffers for optimal performance.
-
-Key Features:
-- Uses CBaseTrajSeq for C buffer storage of integration steps.
-- Storing each step this way does not measurably reduce speed.
-- Numeric integration performed entirely in C
-- Lazy conversion of steps to Python BaseTrajData via __getitem__
-- Compatible with existing Python TrajectoryDataFilter
-
-This replaces the pure Python RK4IntegrationEngine with a Cythonized version
-that achieves significant performance improvements while maintaining API compatibility.
-Because storing each step is practically costless, we always run with "dense_output=True".
+Because storing each step in a CBaseTrajSeq is practically costless, we always run with "dense_output=True".
 """
-
 # noinspection PyUnresolvedReferences
 from cython cimport final
 # noinspection PyUnresolvedReferences
 from libc.stdlib cimport malloc, realloc, free
 # noinspection PyUnresolvedReferences
-from libc.math cimport fabs, sin, cos, tan, atan, atan2, fmin, fmax, pow
+from libc.math cimport sin, cos
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 # noinspection PyUnresolvedReferences
@@ -69,6 +55,8 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
         
         Returns:
             (CBaseTrajSeq, optional error)
+
+        TODO: Switch from self._shot_s to shot_props_ptr
         """
         cdef:
             double velocity, delta_time

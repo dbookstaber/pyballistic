@@ -22,29 +22,9 @@ cdef extern from "include/bclib.h" nogil:
     int WindSock_t_updateCache(WindSock_t *ws)
     V3dT WindSock_t_vectorForRange(WindSock_t *ws, double next_range_param)
 
-    ctypedef struct TrajDataFilter_t:
-        int filter, current_flag, seen_zero
-        double time_step, range_step
-        double time_of_last_record, next_record_distance
-        double previous_mach, previous_time
-        V3dT previous_position, previous_velocity
-        double previous_v_mach
-        double look_angle
-
     double getCorrection(double distance, double offset)
     double calculateEnergy(double bulletWeight, double velocity)
     double calculateOgw(double bulletWeight, double velocity)
-
-
-cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_step,
-                                              const V3dT *initial_position_ptr,
-                                              const V3dT *initial_velocity_ptr,
-                                              double time_step)
-cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotProps_t *shot_props_ptr)
-cdef BaseTrajDataT TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
-                                                 const V3dT *position_ptr,
-                                                 const V3dT *velocity_ptr,
-                                                 double mach, double time)
 
 
 # Function to create and initialize a WindSock_t

@@ -185,7 +185,7 @@ def create_scipy_engine_config(interface_config: Optional[BaseEngineConfigDict] 
 # pylint: disable=import-outside-toplevel,unused-argument,too-many-statements
 class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
     """Integration engine using SciPy's solve_ivp for trajectory calculations."""
-    HitZero: str = "Hit Zero"  # Special non-exceptional termination reason
+    HitZero: str = "Hit Zero"  # Specific non-exceptional termination reason
 
     @override
     def __init__(self, _config: SciPyEngineConfigDict):
@@ -195,7 +195,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
         Args:
             _config (SciPyEngineConfigDict): Configuration dictionary for the engine.
         """
-        self._config: SciPyEngineConfig = create_scipy_engine_config(_config)
+        self._config: SciPyEngineConfig = create_scipy_engine_config(_config)  # type: ignore
         self.gravity_vector: Vector = Vector(.0, self._config.cGravityConstant, .0)
         self.integration_step_count = 0  # Number of evaluations of diff_eq during ._integrate()
         self.trajectory_count = 0  # Number of trajectories calculated
@@ -467,7 +467,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
             zero_crossing_stop = scipy_event(terminal=True, direction=-1)(event_zero_crossing)
             traj_events.append(zero_crossing_stop)
 
-        sol = solve_ivp(diff_eq, (0, self._config.max_time), s0,
+        sol = solve_ivp(diff_eq, (0, self._config.max_time), s0,  # type: ignore[arg-type]
                         method=self._config.integration_method, dense_output=True,
                         rtol=self._config.relative_tolerance,
                         atol=self._config.absolute_tolerance,
@@ -542,7 +542,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                     else:
                         # Use root_scalar to find t where x(t) == x_target
                         def x_minus_target(t):  # Function for root finding: x(t) - x_target
-                            return sol.sol(t)[0] - x_target  # pylint: disable=cell-var-from-loop
+                            return sol.sol(t)[0] - x_target  # type: ignore  # pylint: disable=cell-var-from-loop
 
                         t_lo, t_hi = t_vals[idx - 1], t_vals[idx]
                         res = root_scalar(x_minus_target, bracket=(t_lo, t_hi), method='brentq')
@@ -595,7 +595,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                 if filter_flags & TrajFlag.MACH and ranges[0].mach >= 1.0 and ranges[-1].mach < 1.0:
                     def mach_minus_one(t):
                         """Returns the Mach number at time t minus 1."""
-                        state = sol.sol(t)
+                        state = sol.sol(t)  # type: ignore[reportOptionalMemberAccess]
                         x, y = state[:2]
                         relative_velocity = Vector(*state[3:])
                         if (wind_vector := wind_sock.wind_at_distance(x)) is not None:
@@ -629,7 +629,7 @@ class SciPyIntegrationEngine(BaseIntegrationEngine[SciPyEngineConfigDict]):
                 if filter_flags & TrajFlag.APEX:
                     def vy(t):
                         """Returns the vertical velocity at time t."""
-                        return sol.sol(t)[4]
+                        return sol.sol(t)[4]  # type: ignore[reportOptionalMemberAccess]
 
                     try:
                         t_vals = sol.t

@@ -1,17 +1,13 @@
 """
 TODO: Needed for zeroing and associated methods:
-* .angle, slant_distance, .slant_height, .height and .distance at target_x_ft
-    >> Here we can call BaseTrajDataT.interpolate on last 3, and then compute those
 * ZERO_DOWN slant_distance and slant_height, with_max_drop_zero and with_no_minimum_velocity
-* APEX
-    >> For these, do we bisect and then pass 3 to BaseTrajDataT.interpolate?
 """
 # noinspection PyUnresolvedReferences
 from cython.cimports.cpython cimport exc
 # noinspection PyUnresolvedReferences
 from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
-from libc.math cimport fabs, sin, cos, tan, atan, atan2, sqrt, copysign
+from libc.math cimport fabs, sin, cos, tan, atan2, sqrt, copysign
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, BaseTrajDataT_create
 import py_ballisticcalc_exts.trajectory_data as td
@@ -39,211 +35,16 @@ from py_ballisticcalc_exts.cy_bindings cimport (
 from py_ballisticcalc.unit import Angular, Unit, Velocity, Distance, Energy, Weight
 from py_ballisticcalc.exceptions import ZeroFindingError, RangeError, OutOfRangeError, SolverRuntimeError
 from py_ballisticcalc.engines.base_engine import create_base_engine_config, TrajectoryDataFilter
-from py_ballisticcalc.trajectory_data import HitResult, TrajFlag, ShotProps, BaseTrajData
+from py_ballisticcalc.trajectory_data import HitResult, TrajFlag, ShotProps, BaseTrajData, TrajectoryData
+from py_ballisticcalc.engines.base_engine import BaseIntegrationEngine as _PyBaseIntegrationEngine
+cdef double _ALLOWED_ZERO_ERROR_FEET = <double>_PyBaseIntegrationEngine.ALLOWED_ZERO_ERROR_FEET
+cdef double _APEX_IS_MAX_RANGE_RADIANS = <double>_PyBaseIntegrationEngine.APEX_IS_MAX_RANGE_RADIANS
 
 
 __all__ = (
     'CythonizedBaseIntegrationEngine',
     'create_trajectory_row',
 )
-
-
-cdef TrajDataFilter_t TrajDataFilter_t_create(int filter_flags, double range_step,
-                  const V3dT *initial_position_ptr, const V3dT *initial_velocity_ptr,
-                  double time_step):
-    return TrajDataFilter_t(
-        filter_flags, TrajFlag_t.NONE, TrajFlag_t.NONE,
-        time_step, range_step,
-        0.0, 0.0, 0.0, 0.0,  # Initialize next_record_distance to 0.0
-        initial_position_ptr[0],
-        initial_velocity_ptr[0],
-        0.0, 0.0,
-    )
-
-cdef void TrajDataFilter_t_setup_seen_zero(TrajDataFilter_t * tdf, double height, const ShotProps_t *shot_props_ptr):
-    if height >= 0:
-        tdf.seen_zero |= TrajFlag_t.ZERO_UP
-    elif height < 0 and shot_props_ptr.barrel_elevation < shot_props_ptr.look_angle:
-        tdf.seen_zero |= TrajFlag_t.ZERO_DOWN
-    tdf.look_angle = shot_props_ptr.look_angle
-
-cdef BaseTrajDataT TrajDataFilter_t_should_record(TrajDataFilter_t * tdf,
-                                                 const V3dT *position_ptr,
-                                                 const V3dT *velocity_ptr,
-                                                 double mach,
-                                                 double time):
-    """
-    Simplified version matching Python TrajectoryDataFilter architecture.
-    """
-    cdef V3dT curr_pos = position_ptr[0]
-    cdef V3dT curr_vel = velocity_ptr[0]
-    cdef double curr_speed = mag(velocity_ptr)
-    cdef int flag = TrajFlag_t.NONE
-    cdef double reference_height  # Declare at function start
-    
-    # Variables for interpolation
-    cdef double target_distance, distance_diff, ratio, interp_time, interp_mach
-    cdef V3dT interp_pos, interp_vel
-    
-    tdf.current_flag = TrajFlag_t.NONE
-
-    # Stage 1: Handle immediate events (matches Python exactly)
-    if time == 0.0:
-        # Always record starting point, but NO deferred flags at time=0
-        flag = TrajFlag_t.RANGE if (tdf.range_step > 0 or tdf.time_step > 0) else TrajFlag_t.NONE
-        
-        # Check for initial MACH condition at time=0
-        if (tdf.filter & TrajFlag_t.MACH) != 0 and mach > 0.0:
-            if curr_speed >= mach:
-                flag |= TrajFlag_t.MACH
-                tdf.filter &= ~TrajFlag_t.MACH
-        
-        # Check for initial ZERO condition at time=0
-        if (tdf.filter & TrajFlag_t.ZERO) != 0:
-            reference_height = curr_pos.x * tan(tdf.look_angle)
-            if (tdf.filter & TrajFlag_t.ZERO_DOWN) != 0:
-                # Use <= for initial check to match Python behavior when starting at line of sight
-                if curr_pos.y <= reference_height:
-                    flag |= TrajFlag_t.ZERO_DOWN
-                    tdf.filter &= ~TrajFlag_t.ZERO_DOWN
-            
-            # Python's __init__ method: set up ZERO filter based on initial position
-            if curr_pos.y >= 0:
-                # Shot starts above zero, only look for ZERO_DOWN later
-                tdf.filter &= ~TrajFlag_t.ZERO_UP
-            # If shot starts below zero, keep looking for both (Python logic)
-            
-    else:
-        # Handle RANGE steps with interpolation for exact distances
-        if tdf.range_step > 0:
-            # Check if we've crossed a range boundary
-            while tdf.next_record_distance + tdf.range_step <= curr_pos.x:
-                target_distance = tdf.next_record_distance + tdf.range_step
-                
-                # Check if we're close enough to use current position
-                if abs(target_distance - curr_pos.x) < 0.1:  # Within 0.1 feet
-                    flag = TrajFlag_t.RANGE
-                    tdf.time_of_last_record = time
-                    tdf.next_record_distance += tdf.range_step
-                elif tdf.previous_time >= 0.0:  # Have previous data for interpolation
-                    # Linear interpolation between previous and current position
-                    # to find exact target_distance crossing point
-                    distance_diff = curr_pos.x - tdf.previous_position.x
-                    if distance_diff > 1e-9:  # Avoid division by zero
-                        ratio = (target_distance - tdf.previous_position.x) / distance_diff
-                        if 0.0 <= ratio <= 1.0:  # Valid interpolation range
-                            # Create interpolated data point at exact target distance
-                            interp_time = tdf.previous_time + ratio * (time - tdf.previous_time)
-                            interp_pos.x = target_distance  # Exact distance
-                            interp_pos.y = tdf.previous_position.y + ratio * (curr_pos.y - tdf.previous_position.y)
-                            interp_pos.z = tdf.previous_position.z + ratio * (curr_pos.z - tdf.previous_position.z)
-                            
-                            interp_vel.x = tdf.previous_velocity.x + ratio * (curr_vel.x - tdf.previous_velocity.x)
-                            interp_vel.y = tdf.previous_velocity.y + ratio * (curr_vel.y - tdf.previous_velocity.y)
-                            interp_vel.z = tdf.previous_velocity.z + ratio * (curr_vel.z - tdf.previous_velocity.z)
-                            
-                            interp_mach = tdf.previous_mach + ratio * (mach - tdf.previous_mach)
-                            
-                            # Check for other flags at the interpolated position
-                            interp_flag = TrajFlag_t.RANGE
-                            
-                            # Check for ZERO crossing at interpolated position
-                            if (tdf.filter & TrajFlag_t.ZERO) != 0:
-                                reference_height = interp_pos.x * tan(tdf.look_angle)
-                                if (tdf.filter & TrajFlag_t.ZERO_DOWN) != 0:
-                                    if interp_pos.y < reference_height:
-                                        interp_flag |= TrajFlag_t.ZERO_DOWN
-                                        tdf.filter &= ~TrajFlag_t.ZERO_DOWN
-                            
-                            # Use interpolated data instead of current data
-                            tdf.time_of_last_record = interp_time
-                            tdf.next_record_distance += tdf.range_step
-                            
-                            # Return interpolated data point for exact range step
-                            tdf.current_flag = interp_flag
-                            return BaseTrajDataT_create(interp_time, interp_pos, interp_vel, interp_mach)
-                        else:
-                            # Can't interpolate properly, use current position
-                            flag = TrajFlag_t.RANGE
-                            tdf.time_of_last_record = time
-                            tdf.next_record_distance += tdf.range_step
-                    else:
-                        # No movement between points, use current
-                        flag = TrajFlag_t.RANGE
-                        tdf.time_of_last_record = time
-                        tdf.next_record_distance += tdf.range_step
-                else:
-                    # No previous data, can't interpolate
-                    flag = TrajFlag_t.RANGE
-                    tdf.time_of_last_record = time
-                    tdf.next_record_distance += tdf.range_step
-        
-        # Handle TIME steps  
-        if tdf.time_step > 0 and time >= tdf.time_of_last_record + tdf.time_step:
-            tdf.time_of_last_record += tdf.time_step
-            flag = TrajFlag_t.RANGE
-        
-        # Handle APEX
-        if (tdf.filter & TrajFlag_t.APEX) != 0:
-            if tdf.previous_velocity.y > 0.0 and curr_vel.y <= 0.0:
-                flag |= TrajFlag_t.APEX
-                tdf.filter &= ~TrajFlag_t.APEX
-
-        # Stage 2: Handle deferred events (MACH, ZERO)
-        if tdf.previous_time >= 0.0:  # Have previous data - check for crossings
-            # Check for MACH crossing
-            if (tdf.filter & TrajFlag_t.MACH) != 0 and mach > 0.0:
-                if curr_speed < mach:
-                    flag |= TrajFlag_t.MACH
-                    tdf.filter &= ~TrajFlag_t.MACH
-            
-            # Check for ZERO crossing using slant height - fixed logic bug
-            if (tdf.filter & TrajFlag_t.ZERO) != 0:
-                reference_height = curr_pos.x * tan(tdf.look_angle)
-                if (tdf.filter & TrajFlag_t.ZERO_UP) != 0:
-                    if curr_pos.y >= reference_height:
-                        flag |= TrajFlag_t.ZERO_UP
-                        tdf.filter &= ~TrajFlag_t.ZERO_UP
-                if (tdf.filter & TrajFlag_t.ZERO_DOWN) != 0:
-                    if curr_pos.y < reference_height:
-                        flag |= TrajFlag_t.ZERO_DOWN
-                        tdf.filter &= ~TrajFlag_t.ZERO_DOWN
-        else:  # Have previous data - check for crossings
-            # Check for MACH crossing
-            if (tdf.filter & TrajFlag_t.MACH) != 0 and mach > 0.0:
-                if curr_speed < mach:
-                    flag |= TrajFlag_t.MACH
-                    tdf.filter &= ~TrajFlag_t.MACH
-            
-            # Check for ZERO crossing using slant height - fixed logic bug
-            if (tdf.filter & TrajFlag_t.ZERO) != 0:
-                reference_height = curr_pos.x * tan(tdf.look_angle)
-                if (tdf.filter & TrajFlag_t.ZERO_UP) != 0:
-                    if curr_pos.y >= reference_height:
-                        flag |= TrajFlag_t.ZERO_UP
-                        tdf.filter &= ~TrajFlag_t.ZERO_UP
-                if (tdf.filter & TrajFlag_t.ZERO_DOWN) != 0:
-                    if curr_pos.y < reference_height:
-                        flag |= TrajFlag_t.ZERO_DOWN
-                        tdf.filter &= ~TrajFlag_t.ZERO_DOWN
-
-    # Update state
-    tdf.previous_time = time
-    tdf.previous_position = curr_pos
-    tdf.previous_velocity = curr_vel
-    tdf.previous_mach = mach
-    if mach != 0.0:
-        tdf.previous_v_mach = curr_speed / mach
-    else:
-        tdf.previous_v_mach = 9e9
-
-    # Return data if we have any flags
-    if flag != TrajFlag_t.NONE:
-        tdf.current_flag = flag
-        return BaseTrajDataT_create(time, curr_pos, curr_vel, mach)
-    else:
-        return <BaseTrajDataT>None
-
 
 cdef WindSock_t * WindSock_t_create(object winds_py_list):
     """
@@ -284,8 +85,10 @@ cdef WindSock_t * WindSock_t_create(object winds_py_list):
 
 
 cdef class CythonizedBaseIntegrationEngine:
-    
-    APEX_IS_MAX_RANGE_RADIANS = 0.0003  # Radians from vertical where the apex is max range
+    """Implements EngineProtocol"""
+    # Expose Python-visible constants to match BaseIntegrationEngine API
+    APEX_IS_MAX_RANGE_RADIANS = float(_APEX_IS_MAX_RANGE_RADIANS)
+    ALLOWED_ZERO_ERROR_FEET = float(_ALLOWED_ZERO_ERROR_FEET)
 
     def __cinit__(CythonizedBaseIntegrationEngine self, object _config):
         self._config = create_base_engine_config(_config)
@@ -405,7 +208,6 @@ cdef class CythonizedBaseIntegrationEngine:
 
         #TODO: First trying to always get dense_output and post-process using python TrajectoryDataFilter
         shot_props_ptr = self._init_trajectory(shot_info)
-        # object = self._integrate(range_limit_ft, range_step_ft, time_step, filter_flags, dense_output)
         object = self._integrate(shot_props_ptr, range_limit_ft, range_step_ft, time_step, filter_flags)
         self._free_trajectory()
         props = ShotProps.from_shot(shot_info)
@@ -425,16 +227,17 @@ cdef class CythonizedBaseIntegrationEngine:
                                     props.barrel_elevation_rad, props.look_angle_rad,
                                     range_limit_ft, range_step_ft, time_step
         )
-        # If dense_output is True, we need to pass the step_data (the CBaseTrajSeq) as step_data
-        # if dense_output and len(trajectory) >= 2:
-        if len(trajectory) >= 2:
-            #region Feed step_data through TrajectoryDataFilter to get TrajectoryData
-            for _, d in enumerate(trajectory):
-                # print(f'{i=}: {d=}')
-                tdf.record(BaseTrajData(d.time, d.position_vector, d.velocity_vector, d.mach))
-            #endregion
+        #region Feed step_data through TrajectoryDataFilter to get TrajectoryData
+        for _, d in enumerate(trajectory):
+            # print(f'{i=}: {d=}')
+            tdf.record(BaseTrajData(d.time, d.position_vector, d.velocity_vector, d.mach))
+        #endregion
         if error is not None:
             error = RangeError(error, tdf.records)
+            # For incomplete trajectories we add last point, so long as it isn't a duplicate
+            fin = trajectory[-1]
+            if fin.time > tdf.records[-1].time:
+                tdf.records.append(TrajectoryData.from_props(props, fin.time, fin.position_vector, fin.velocity_vector, fin.mach, TrajFlag.NONE))
         return HitResult(props, tdf.records, trajectory if dense_output else None, filter_flags != TrajFlag_t.NONE, error)
 
     cdef void _free_trajectory(CythonizedBaseIntegrationEngine self):
@@ -513,8 +316,6 @@ cdef class CythonizedBaseIntegrationEngine:
             where status is: 0 = CONTINUE, 1 = DONE (early return with look_angle_rad)
         """
         cdef:
-            double ALLOWED_ZERO_ERROR_FEET = 0.01
-            double APEX_IS_MAX_RANGE_RADIANS = 0.0003
             double slant_range_ft = distance
             double look_angle_rad = shot_props_ptr[0].look_angle
             double target_x_ft = slant_range_ft * cos(look_angle_rad)
@@ -524,7 +325,7 @@ cdef class CythonizedBaseIntegrationEngine:
             double apex_slant_ft
         
         # Edge case: Very close shot
-        if fabs(slant_range_ft) < ALLOWED_ZERO_ERROR_FEET:
+        if fabs(slant_range_ft) < _ALLOWED_ZERO_ERROR_FEET:
             return (1, look_angle_rad, slant_range_ft, target_x_ft, target_y_ft, start_height_ft)
         
         # Edge case: Very close shot; ignore gravity and drag
@@ -532,7 +333,7 @@ cdef class CythonizedBaseIntegrationEngine:
             return (1, atan2(target_y_ft + start_height_ft, target_x_ft), slant_range_ft, target_x_ft, target_y_ft, start_height_ft)
         
         # Edge case: Virtually vertical shot; just check if it can reach the target
-        if fabs(look_angle_rad - 1.5707963267948966) < APEX_IS_MAX_RANGE_RADIANS:  # π/2 radians = 90 degrees
+        if fabs(look_angle_rad - 1.5707963267948966) < _APEX_IS_MAX_RANGE_RADIANS:  # π/2 radians = 90 degrees
             # Compute slant distance at apex using position and look angle
             apex = <BaseTrajDataT>self._find_apex(shot_props_ptr)
             apex_slant_ft = apex.position.x * cos(look_angle_rad) + apex.position.y * sin(look_angle_rad)
@@ -555,16 +356,10 @@ cdef class CythonizedBaseIntegrationEngine:
             double target_x_ft = <double>init_data[3]
             double target_y_ft = <double>init_data[4]
             double start_height_ft = <double>init_data[5]
-            double VERTICAL_SHOT_THRESHOLD = <double>0.0003  # About 0.017 degrees from vertical
         
         if status == 1:  # DONE
             return _new_rad(look_angle_rad)
             
-        # Special case for vertical or near-vertical shots
-        if fabs(look_angle_rad - <double>1.5707963267948966) < VERTICAL_SHOT_THRESHOLD:
-            # For vertical shots, return the same angle (90 degrees)
-            return _new_rad(look_angle_rad)
-        
         # 1. Find the maximum possible range to establish a search bracket.
         cdef tuple max_range_result = self._find_max_range(shot_props_ptr, (0, 90))
         cdef object max_range = max_range_result[0]
@@ -572,28 +367,37 @@ cdef class CythonizedBaseIntegrationEngine:
         cdef:
             double max_range_ft = max_range._feet
             double angle_at_max_rad = angle_at_max._rad
-            double ALLOWED_ZERO_ERROR_FEET = <double>0.01
             
         # 2. Handle edge cases based on max range.
         if slant_range_ft > max_range_ft:
             raise OutOfRangeError(_new_feet(distance), max_range, _new_rad(look_angle_rad))
-        if fabs(slant_range_ft - max_range_ft) < ALLOWED_ZERO_ERROR_FEET:
+        if fabs(slant_range_ft - max_range_ft) < _ALLOWED_ZERO_ERROR_FEET:
             return angle_at_max
         
         def error_at_distance(angle_rad):
-            """Target miss (in feet) for given launch angle."""
+            """Target miss (in feet) for given launch angle.
+            Mirrors Python engine: integrate to target_x_ft and use last trajectory point.
+            """
+            cdef CBaseTrajSeq trajectory
+            cdef BaseTrajDataT hit
+            cdef double t_height_ft
+            cdef double t_distance_ft
             shot_props_ptr[0].barrel_elevation = angle_rad
+            result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+            trajectory = <CBaseTrajSeq>result[0]
+            # Interpolate to world X = target_x_ft like Python engine's HitResult[-1] behavior
             try:
-                result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>(0.0), <int>TrajFlag_t.NONE)
-                t = result[0][-1]
-            except RangeError as e:
-                if e.last_distance is None:
-                    raise e
-                t = e.incomplete_trajectory[-1]
-            if t.time == <double>0.0:
-                # logger.warning("Integrator returned initial point. Consider removing constraints.")
+                hit = (<object>trajectory).get_at('position.x', <double>target_x_ft)
+            except Exception:
+                # If interpolation fails (didn't reach), return sentinel to avoid false bracket
                 return <double>9e9
-            return (t.height._feet) - target_y_ft - fabs((t.distance._feet) - target_x_ft)
+            if hit.time == <double>0.0:
+                # Integrator returned initial point. Consider removing constraints.
+                return <double>9e9
+            # Use world coordinates for error like Python engine: height=y, distance=x
+            t_height_ft = <double>hit.position.y
+            t_distance_ft = <double>hit.position.x
+            return t_height_ft - target_y_ft - fabs(t_distance_ft - target_x_ft)
         
         # 3. Establish search bracket for the zero angle.
         cdef:
@@ -663,7 +467,6 @@ cdef class CythonizedBaseIntegrationEngine:
         Internal function to find the maximum slant range via golden-section search.
         """
         cdef:
-            double APEX_IS_MAX_RANGE_RADIANS = <double>0.0003
             double look_angle_rad = <double>shot_props_ptr[0].look_angle
             double low_angle_deg = <double>angle_bracket_deg[0]
             double high_angle_deg = <double>angle_bracket_deg[1]
@@ -674,20 +477,26 @@ cdef class CythonizedBaseIntegrationEngine:
             double _sdist
             
         # Virtually vertical shot
-        if fabs(look_angle_rad - <double>1.5707963267948966) < APEX_IS_MAX_RANGE_RADIANS:  # π/2 radians = 90 degrees
+        if fabs(look_angle_rad - <double>1.5707963267948966) < _APEX_IS_MAX_RANGE_RADIANS:  # π/2 radians = 90 degrees
             _apex_obj = self._find_apex(shot_props_ptr)
             _sdist = _apex_obj.position.x * cos(look_angle_rad) + _apex_obj.position.y * sin(look_angle_rad)
             return (_new_feet(_sdist), _new_rad(look_angle_rad))
         
-        # Backup and adjust constraints
+        # Backup and adjust constraints (emulate @with_max_drop_zero and @with_no_minimum_velocity)
         cdef:
             double restore_cMaximumDrop = <double>0.0
             int has_restore_cMaximumDrop = 0
+            double restore_cMinimumVelocity = <double>0.0
+            int has_restore_cMinimumVelocity = 0
             
         if self._config_s.cMaximumDrop != <double>0.0:
             restore_cMaximumDrop = self._config_s.cMaximumDrop
             self._config_s.cMaximumDrop = <double>0.0  # We want to run trajectory until it returns to horizontal
             has_restore_cMaximumDrop = 1
+        if self._config_s.cMinimumVelocity != <double>0.0:
+            restore_cMinimumVelocity = self._config_s.cMinimumVelocity
+            self._config_s.cMinimumVelocity = <double>0.0
+            has_restore_cMinimumVelocity = 1
         
         cdef:
             dict cache = {}
@@ -702,7 +511,23 @@ cdef class CythonizedBaseIntegrationEngine:
             int iteration
             
         def range_for_angle(angle_rad):
-            """Returns slant-distance minus slant-error (in feet) for given launch angle in radians."""
+            """Returns max slant-distance for given launch angle in radians using ZERO_DOWN after apex.
+            If no valid ZERO_DOWN is found, returns a large negative sentinel (-9e9)."""
+            cdef double ca
+            cdef double sa
+            cdef int apex_seen
+            cdef double h_prev
+            cdef double h_cur
+            cdef double denom
+            cdef double t
+            cdef double ix
+            cdef double iy
+            cdef double sdist
+            cdef CBaseTrajSeq trajectory
+            cdef Py_ssize_t n
+            cdef Py_ssize_t i
+            cdef BaseTrajC* prev_ptr
+            cdef BaseTrajC* cur_ptr
             if angle_rad in cache:
                 return cache[angle_rad]
             
@@ -710,34 +535,54 @@ cdef class CythonizedBaseIntegrationEngine:
             shot_props_ptr[0].barrel_elevation = angle_rad
             
             try:
-                # Use ZERO_DOWN flag like Python SciPy engine does
-                result = self._integrate(shot_props_ptr, <double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.ZERO_DOWN)
-                trajectory = result[0]
-                
-                # Check if ZERO_DOWN was actually found
-                zero_down_point = None
-                for point in trajectory:
-                    if (point.flag & TrajFlag_t.ZERO_DOWN) != 0:
-                        zero_down_point = point
-                        break
-                
-                if zero_down_point is None:
-                    # No ZERO_DOWN found - trajectory never came back to sight line
-                    cache[angle_rad] = -9e9
-                    return -9e9
-                
-                # Return slant distance penalized by slant height error (should be zero at ZERO_DOWN)
-                range_ft = zero_down_point.slant_distance._feet - fabs(zero_down_point.slant_height._feet)
-                cache[angle_rad] = range_ft
-                return range_ft
+                # Integrate without relying on flags; we'll derive ZERO_DOWN after apex
+                result = self._integrate(shot_props_ptr, <double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE)
+                trajectory = <CBaseTrajSeq>result[0]
+                ca = cos(shot_props_ptr[0].look_angle)
+                sa = sin(shot_props_ptr[0].look_angle)
+                apex_seen = 0
+                h_prev = 0.0
+                h_cur = 0.0
+                # Iterate over raw C buffer for speed and to avoid Python attribute overhead
+                n = <Py_ssize_t>len(trajectory)
+                if n >= 2:
+                    for i in range(1, n):
+                        prev_ptr = trajectory.c_getitem(i - 1)
+                        cur_ptr = trajectory.c_getitem(i)
+                        # detect apex crossing (vy goes from + to <= 0)
+                        if apex_seen == 0 and prev_ptr.vy > 0.0 and cur_ptr.vy <= 0.0:
+                            apex_seen = 1
+                        if apex_seen:
+                            h_prev = prev_ptr.py * ca - prev_ptr.px * sa
+                            h_cur = cur_ptr.py * ca - cur_ptr.px * sa
+                            if h_prev >= 0.0 and h_cur <= 0.0:
+                                # Linear interpolation across the crossing for slant_height == 0
+                                denom = h_prev - h_cur
+                                if denom == 0.0:
+                                    t = 0.0
+                                else:
+                                    t = h_prev / denom
+                                # Clamp t to [0,1]
+                                if t < 0.0:
+                                    t = 0.0
+                                elif t > 1.0:
+                                    t = 1.0
+                                ix = prev_ptr.px + t * (cur_ptr.px - prev_ptr.px)
+                                iy = prev_ptr.py + t * (cur_ptr.py - prev_ptr.py)
+                                sdist = ix * ca + iy * sa
+                                cache[angle_rad] = sdist
+                                return sdist
+                # If we get here then ZERO_DOWN not found
+                cache[angle_rad] = -9e9
+                return -9e9
                 
             except RangeError:
                 # Trajectory terminated early due to constraints - no valid ZERO_DOWN
                 cache[angle_rad] = -9e9
                 return -9e9
         
-        yc = range_for_angle(c)
-        yd = range_for_angle(d)
+        yc = <double>float(range_for_angle(c))
+        yd = <double>float(range_for_angle(d))
         
         for iteration in range(100):  # 100 iterations is more than enough for high precision
             if h < <double>1e-5:  # Angle tolerance in radians
@@ -746,19 +591,21 @@ cdef class CythonizedBaseIntegrationEngine:
                 b, d, yd = d, c, yc
                 h = b - a
                 c = a + inv_phi_sq * h
-                yc = range_for_angle(c)
+                yc = <double>float(range_for_angle(c))
             else:
                 a, c, yc = c, d, yd
                 h = b - a
                 d = a + inv_phi * h
-                yd = range_for_angle(d)
+                yd = <double>float(range_for_angle(d))
         
         angle_at_max_rad = (a + b) / 2
-        max_range_ft = range_for_angle(angle_at_max_rad)
+        max_range_ft = <double>float(range_for_angle(angle_at_max_rad))
         
         # Restore original constraints
         if has_restore_cMaximumDrop:
             self._config_s.cMaximumDrop = restore_cMaximumDrop
+        if has_restore_cMinimumVelocity:
+            self._config_s.cMinimumVelocity = restore_cMinimumVelocity
         
         return (_new_feet(max_range_ft), _new_rad(angle_at_max_rad))
 
@@ -821,7 +668,6 @@ cdef class CythonizedBaseIntegrationEngine:
             # early bindings
             double _cZeroFindingAccuracy = self._config_s.cZeroFindingAccuracy
             int _cMaxIterations = <int>self._config_s.cMaxIterations
-            double ALLOWED_ZERO_ERROR_FEET = 0.01  # Allowed range error (along sight line), in feet, for zero angle
 
             # Enhanced zero-finding variables
             int iterations_count = 0
@@ -897,7 +743,7 @@ cdef class CythonizedBaseIntegrationEngine:
                 raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation),
                                      'Correction denominator is zero')
 
-            if range_error_ft > ALLOWED_ZERO_ERROR_FEET:
+            if range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
                 # We're still trying to reach zero_distance
                 if range_error_ft > prev_range_error_ft - 1e-6:  # We're not getting closer to zero_distance
                     # Restore original constraints before raising error
@@ -926,7 +772,7 @@ cdef class CythonizedBaseIntegrationEngine:
             prev_range_error_ft = range_error_ft
             prev_height_error_ft = height_error_ft
 
-            if height_error_ft > _cZeroFindingAccuracy or range_error_ft > ALLOWED_ZERO_ERROR_FEET:
+            if height_error_ft > _cZeroFindingAccuracy or range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
                 # Adjust barrel elevation to close height at zero distance
                 applied_correction = correction * damping_factor
                 shot_props_ptr[0].barrel_elevation += applied_correction
@@ -942,7 +788,7 @@ cdef class CythonizedBaseIntegrationEngine:
         if has_restore_cMinimumAltitude:
             self._config_s.cMinimumAltitude = restore_cMinimumAltitude
 
-        if height_error_ft > _cZeroFindingAccuracy or range_error_ft > ALLOWED_ZERO_ERROR_FEET:
+        if height_error_ft > _cZeroFindingAccuracy or range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
             # ZeroFindingError contains an instance of last barrel elevation; so caller can check how close zero is
             raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation))
         
