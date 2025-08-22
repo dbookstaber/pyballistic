@@ -31,7 +31,6 @@ __all__ = (
     'calculate_ogw',
     'get_correction',
     'calculate_curve',
-    '_new_rad',
 )
 
 _TrajFlagNames = {

@@ -1,14 +1,24 @@
+"""
+Lightweight Cython data types for trajectory rows and interpolation helpers.
+
+This module mirrors a subset of the Python API in py_ballisticcalc.trajectory_data:
+ - BaseTrajDataT: minimal row with time, position (V3dT), velocity (V3dT), mach.
+ - TrajectoryDataT: Python-facing richer row used mainly for formatting or tests.
+ - lagrange_quadratic: shared quadratic interpolation utility.
+
+Primary producer/consumer is the Cython engines which operate on a dense C buffer
+and convert to these types as needed for interpolation or presentation.
+"""
 # noinspection PyUnresolvedReferences
 from cython cimport final
-from libc.math cimport fabs
+from py_ballisticcalc_exts.v3d cimport V3dT, set, mag
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 
+from py_ballisticcalc.trajectory_data import TrajFlag as PyTrajFlag
 from py_ballisticcalc.unit import PreferredUnits
 from py_ballisticcalc.vector import Vector
 import py_ballisticcalc.unit as pyunit
 
-# noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.v3d cimport V3dT, set, mag
-# from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 
 # Helper functions to create unit objects
 cdef object _new_feet(double val):
@@ -34,7 +44,7 @@ cdef object _v3d_to_vector(V3dT v):
 cdef class BaseTrajDataT:
     __slots__ = ('time', 'position', 'velocity', 'mach')
 
-    def __cinit__(BaseTrajDataT self, double time, V3dT position, V3dT velocity, double mach):
+    def __cinit__(self, double time, V3dT position, V3dT velocity, double mach):
         self.time = time
         self.position = position
         self.velocity = velocity
@@ -295,9 +305,7 @@ cdef class TrajectoryDataT:
             f'{self.drag:.3f}',
             _fmt(self.energy, PreferredUnits.energy),
             _fmt(self.ogw, PreferredUnits.ogw),
-
-            # TrajFlag.name(self.flag)
-            f"{self.flag}"  # TODO: fix flag.name
+            PyTrajFlag.name(self.flag)
         )
 
     def in_def_units(TrajectoryDataT self) -> tuple[float, ...]:

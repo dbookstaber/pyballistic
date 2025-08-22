@@ -1,6 +1,9 @@
 """
-TODO: Needed for zeroing and associated methods:
-* ZERO_DOWN slant_distance and slant_height, with_max_drop_zero and with_no_minimum_velocity
+CythonizedBaseIntegrationEngine
+
+Presently ._integrate() returns dense data in a CBaseTrajSeq, then .integrate()
+    feeds it through the Python TrajectoryDataFilter.
+TODO: Implement a Cython TrajectoryDataFilter.
 """
 # noinspection PyUnresolvedReferences
 from cython.cimports.cpython cimport exc
@@ -9,15 +12,14 @@ from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
 from libc.math cimport fabs, sin, cos, tan, atan2, sqrt, copysign
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT, BaseTrajDataT_create
+from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT
 import py_ballisticcalc_exts.trajectory_data as td
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.v3d cimport V3dT, add, sub, mag, mulS
+from py_ballisticcalc_exts.v3d cimport V3dT, mag
 from py_ballisticcalc_exts.base_traj_seq cimport CBaseTrajSeq, BaseTrajC
 # noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
     # types and methods
-    Config_t,
     Wind_t,
     Atmosphere_t,
     ShotProps_t,
@@ -25,7 +27,6 @@ from py_ballisticcalc_exts.cy_bindings cimport (
     ShotProps_t_spinDrift,
     ShotProps_t_updateStabilityCoefficient,
     Wind_t_from_python,
-    Wind_t_to_V3dT,
     # factory funcs
     Config_t_from_pyobject,
     MachList_t_from_pylist,
@@ -43,7 +44,6 @@ cdef double _APEX_IS_MAX_RANGE_RADIANS = <double>_PyBaseIntegrationEngine.APEX_I
 
 __all__ = (
     'CythonizedBaseIntegrationEngine',
-    'create_trajectory_row',
 )
 
 cdef WindSock_t * WindSock_t_create(object winds_py_list):
@@ -205,8 +205,6 @@ cdef class CythonizedBaseIntegrationEngine:
             ShotProps_t* shot_props_ptr
         range_limit_ft = max_range._feet
         range_step_ft = dist_step._feet if dist_step is not None else range_limit_ft
-
-        #TODO: First trying to always get dense_output and post-process using python TrajectoryDataFilter
         shot_props_ptr = self._init_trajectory(shot_info)
         object = self._integrate(shot_props_ptr, range_limit_ft, range_step_ft, time_step, filter_flags)
         self._free_trajectory()
@@ -217,21 +215,14 @@ cdef class CythonizedBaseIntegrationEngine:
         # Extract trajectory and step_data from the result
         trajectory = object[0]
         error = object[1]
-
-        # print(f'In CythonBaseEngine integrate returned {len(trajectory)} elements in {type(trajectory)}')
         init = trajectory[0]
-        # print(f'\tFirst element {type(init)}')
-        # print(f'\t\t{init.time=}\t{init.position_vector=}\t{init.velocity_vector=}\t{init.mach=}')
-        # print(f'\t\t{type(init.time)=}\t{type(init.position_vector)=}\t{type(init.velocity_vector)=}\t{type(init.mach)=}')
         tdf = TrajectoryDataFilter(props, filter_flags, init.position_vector, init.velocity_vector,
                                     props.barrel_elevation_rad, props.look_angle_rad,
                                     range_limit_ft, range_step_ft, time_step
         )
-        #region Feed step_data through TrajectoryDataFilter to get TrajectoryData
+        # Feed step_data through TrajectoryDataFilter to get TrajectoryData
         for _, d in enumerate(trajectory):
-            # print(f'{i=}: {d=}')
             tdf.record(BaseTrajData(d.time, d.position_vector, d.velocity_vector, d.mach))
-        #endregion
         if error is not None:
             error = RangeError(error, tdf.records)
             # For incomplete trajectories we add last point, so long as it isn't a duplicate
@@ -302,6 +293,12 @@ cdef class CythonizedBaseIntegrationEngine:
 
         self._wind_sock = WindSock_t_create(shot_info.winds)
         if self._wind_sock is NULL:
+            # Free partially constructed shot props before raising
+            ShotProps_t_free(&self._shot_s)
+            self._shot_s.mach_list.array = NULL
+            self._shot_s.mach_list.length = 0
+            self._shot_s.curve.points = NULL
+            self._shot_s.curve.length = 0
             raise MemoryError("Can't allocate memory for wind_sock")
 
         return &self._shot_s

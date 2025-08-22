@@ -6,14 +6,9 @@ Because storing each step in a CBaseTrajSeq is practically costless, we always r
 # noinspection PyUnresolvedReferences
 from cython cimport final
 # noinspection PyUnresolvedReferences
-from libc.stdlib cimport malloc, realloc, free
-# noinspection PyUnresolvedReferences
 from libc.math cimport sin, cos
 # noinspection PyUnresolvedReferences
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
-# noinspection PyUnresolvedReferences
 from py_ballisticcalc_exts.cy_bindings cimport (
-    Config_t,
     ShotProps_t,
     ShotProps_t_dragByMach,
     Atmosphere_t_updateDensityFactorAndMachForAltitude,
@@ -33,6 +28,7 @@ __all__ = [
     'CythonizedRK4IntegrationEngine',
 ]
 
+@final
 cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
     """Cythonized RK4 (Runge-Kutta 4th order) integration engine for ballistic calculations."""
     DEFAULT_TIME_STEP = 0.0025

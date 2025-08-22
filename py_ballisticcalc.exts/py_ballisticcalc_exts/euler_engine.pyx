@@ -23,7 +23,7 @@ __all__ = [
     'CythonizedEulerIntegrationEngine',
 ]
 
-
+@final
 cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
     """Cythonized Euler integration engine for ballistic calculations."""
     DEFAULT_STEP = 0.5  # Match Python's EulerIntegrationEngine.DEFAULT_STEP

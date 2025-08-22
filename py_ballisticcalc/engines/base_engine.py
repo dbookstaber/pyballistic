@@ -15,7 +15,7 @@ from py_ballisticcalc.conditions import Shot, Wind
 from py_ballisticcalc.exceptions import ZeroFindingError, OutOfRangeError, SolverRuntimeError
 from py_ballisticcalc.generics.engine import EngineProtocol
 from py_ballisticcalc.logger import logger
-from py_ballisticcalc.trajectory_data import *
+from py_ballisticcalc.trajectory_data import BaseTrajData, HitResult, ShotProps, TrajectoryData, TrajFlag
 from py_ballisticcalc.unit import Distance, Angular
 from py_ballisticcalc.vector import Vector
 
@@ -551,7 +551,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             # Virtually vertical shot; just check if it can reach the target
             max_range = self._find_apex(props).slant_distance
             if (max_range >> Distance.Foot) < slant_range_ft:
-                raise OutOfRangeError(distance, max_range, _new_rad(props.look_angle_rad))
+                raise OutOfRangeError(distance, max_range, Angular.Radian(props.look_angle_rad))
             return ZeroFindingProps(_ZeroCalcStatus.DONE, look_angle_rad=props.look_angle_rad)
         # endregion Edge cases
 
@@ -809,10 +809,11 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         if restore_cMinimumAltitude is not None:
             self._config.cMinimumAltitude = restore_cMinimumAltitude
 
+        result = Angular.Radian(props.barrel_elevation_rad)
         if height_error_ft > _cZeroFindingAccuracy or range_error_ft > self.ALLOWED_ZERO_ERROR_FEET:
             # ZeroFindingError contains an instance of last barrel elevation; so caller can check how close zero is
-            raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(props.barrel_elevation_rad))
-        return _new_rad(props.barrel_elevation_rad)
+            raise ZeroFindingError(height_error_ft, iterations_count, result)
+        return result
 
     def integrate(self, shot_info: Shot,
                         max_range: Distance,
