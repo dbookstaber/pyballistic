@@ -231,6 +231,42 @@ cdef class CythonizedBaseIntegrationEngine:
                 tdf.records.append(TrajectoryData.from_props(props, fin.time, fin.position_vector, fin.velocity_vector, fin.mach, TrajFlag.NONE))
         return HitResult(props, tdf.records, trajectory if dense_output else None, filter_flags != TrajFlag_t.NONE, error)
 
+    cdef inline double _error_at_distance(CythonizedBaseIntegrationEngine self,
+                                          ShotProps_t *shot_props_ptr,
+                                          double angle_rad,
+                                          double target_x_ft,
+                                          double target_y_ft):
+        """Target miss (feet) for given launch angle using CBaseTrajSeq.
+        Attempts to avoid Python exceptions in the hot path by pre-checking reach."""
+        cdef CBaseTrajSeq trajectory
+        cdef BaseTrajDataT hit
+        cdef BaseTrajC* last_ptr
+        cdef Py_ssize_t n
+        cdef double t_height_ft
+        cdef double t_distance_ft
+        shot_props_ptr[0].barrel_elevation = angle_rad
+        try:
+            result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+            trajectory = <CBaseTrajSeq>result[0]
+        except Exception:
+            return <double>9e9
+        n = <Py_ssize_t>len(trajectory)
+        if n < 2:
+            return <double>9e9
+        last_ptr = trajectory.c_getitem(n - 1)
+        if last_ptr.px + 1e-9 < target_x_ft:
+            # Did not reach target x; avoid raising from get_at
+            return <double>9e9
+        try:
+            hit = (<object>trajectory).get_at('position.x', <double>target_x_ft)
+        except Exception:
+            return <double>9e9
+        if hit.time == <double>0.0:
+            return <double>9e9
+        t_height_ft = <double>hit.position.y
+        t_distance_ft = <double>hit.position.x
+        return t_height_ft - target_y_ft - fabs(t_distance_ft - target_x_ft)
+
     cdef void _free_trajectory(CythonizedBaseIntegrationEngine self):
         if self._wind_sock is not NULL:
             WindSock_t_free(self._wind_sock)
@@ -370,38 +406,13 @@ cdef class CythonizedBaseIntegrationEngine:
             raise OutOfRangeError(_new_feet(distance), max_range, _new_rad(look_angle_rad))
         if fabs(slant_range_ft - max_range_ft) < _ALLOWED_ZERO_ERROR_FEET:
             return angle_at_max
-        
-        def error_at_distance(angle_rad):
-            """Target miss (in feet) for given launch angle.
-            Mirrors Python engine: integrate to target_x_ft and use last trajectory point.
-            """
-            cdef CBaseTrajSeq trajectory
-            cdef BaseTrajDataT hit
-            cdef double t_height_ft
-            cdef double t_distance_ft
-            shot_props_ptr[0].barrel_elevation = angle_rad
-            result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
-            trajectory = <CBaseTrajSeq>result[0]
-            # Interpolate to world X = target_x_ft like Python engine's HitResult[-1] behavior
-            try:
-                hit = (<object>trajectory).get_at('position.x', <double>target_x_ft)
-            except Exception:
-                # If interpolation fails (didn't reach), return sentinel to avoid false bracket
-                return <double>9e9
-            if hit.time == <double>0.0:
-                # Integrator returned initial point. Consider removing constraints.
-                return <double>9e9
-            # Use world coordinates for error like Python engine: height=y, distance=x
-            t_height_ft = <double>hit.position.y
-            t_distance_ft = <double>hit.position.x
-            return t_height_ft - target_y_ft - fabs(t_distance_ft - target_x_ft)
-        
+
         # 3. Establish search bracket for the zero angle.
         cdef:
             double low_angle, high_angle
             double sight_height_adjust = 0.0
             double f_low, f_high
-            
+
         if lofted:
             low_angle = angle_at_max_rad
             high_angle = 1.5690308719637473  # 89.9 degrees in radians
@@ -410,10 +421,10 @@ cdef class CythonizedBaseIntegrationEngine:
                 sight_height_adjust = atan2(start_height_ft, target_x_ft)
             low_angle = look_angle_rad - sight_height_adjust
             high_angle = angle_at_max_rad
-        
-        f_low = error_at_distance(low_angle)
-        f_high = error_at_distance(high_angle)
-        
+
+        f_low = self._error_at_distance(shot_props_ptr, low_angle, target_x_ft, target_y_ft)
+        f_high = self._error_at_distance(shot_props_ptr, high_angle, target_x_ft, target_y_ft)
+
         if f_low * f_high >= 0:
             lofted_str = "lofted" if lofted else "low"
             reason = f"No {lofted_str} zero trajectory in elevation range "
@@ -421,27 +432,27 @@ cdef class CythonizedBaseIntegrationEngine:
             reason += f"{high_angle * 57.29577951308232:.2f} deg). "
             reason += f"Errors at bracket: f(low)={f_low:.2f}, f(high)={f_high:.2f}"
             raise ZeroFindingError(target_y_ft, 0, _new_rad(shot_props_ptr[0].barrel_elevation), reason=reason)
-        
+
         # 4. Ridder's method implementation
         cdef:
             int iteration
             double mid_angle, f_mid, s, next_angle, f_next
-            
+
         for iteration in range(<int>self._config_s.cMaxIterations):
             mid_angle = (low_angle + high_angle) / 2.0
-            f_mid = error_at_distance(mid_angle)
-            
+            f_mid = self._error_at_distance(shot_props_ptr, mid_angle, target_x_ft, target_y_ft)
+
             # s is the updated point using the root of the linear function through (low_angle, f_low) and (high_angle, f_high)
             # and the quadratic function that passes through those points and (mid_angle, f_mid)
             s = sqrt(f_mid * f_mid - f_low * f_high)
             if s == 0.0:
                 break  # Should not happen if f_low and f_high have opposite signs
-            
+
             next_angle = mid_angle + (mid_angle - low_angle) * (copysign(1.0, f_low - f_high) * f_mid / s)
             if fabs(next_angle - mid_angle) < self._config_s.cZeroFindingAccuracy:
                 return _new_rad(next_angle)
-            
-            f_next = error_at_distance(next_angle)
+
+            f_next = self._error_at_distance(shot_props_ptr, next_angle, target_x_ft, target_y_ft)
             # Update the bracket
             if f_mid * f_next < 0:
                 low_angle, f_low = mid_angle, f_mid
@@ -452,7 +463,7 @@ cdef class CythonizedBaseIntegrationEngine:
                 low_angle, f_low = next_angle, f_next
             else:
                 break  # If we are here, something is wrong, the root is not bracketed anymore
-            
+
             if fabs(high_angle - low_angle) < self._config_s.cZeroFindingAccuracy:
                 return _new_rad((low_angle + high_angle) / 2)
         
@@ -462,6 +473,14 @@ cdef class CythonizedBaseIntegrationEngine:
     cdef tuple _find_max_range(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, tuple angle_bracket_deg = (0, 90)):
         """
         Internal function to find the maximum slant range via golden-section search.
+
+        Args:
+            props (ShotProps): The shot information: gun, ammo, environment, look_angle.
+            angle_bracket_deg (Tuple[float, float], optional): The angle bracket in degrees to search for max range.
+                                                               Defaults to (0, 90).
+
+        Returns:
+            Tuple[Distance, Angular]: The maximum slant range and the launch angle to reach it.
         """
         cdef:
             double look_angle_rad = <double>shot_props_ptr[0].look_angle
@@ -496,7 +515,6 @@ cdef class CythonizedBaseIntegrationEngine:
             has_restore_cMinimumVelocity = 1
         
         cdef:
-            dict cache = {}
             double inv_phi = <double>0.6180339887498949  # (sqrt(5) - 1) / 2
             double inv_phi_sq = <double>0.38196601125010515  # inv_phi^2
             double a = low_angle_deg * <double>0.017453292519943295  # Convert to radians
@@ -508,11 +526,11 @@ cdef class CythonizedBaseIntegrationEngine:
             int iteration
             
         def range_for_angle(angle_rad):
-            """Returns max slant-distance for given launch angle in radians using ZERO_DOWN after apex.
-            If no valid ZERO_DOWN is found, returns a large negative sentinel (-9e9)."""
+            """Returns max slant-distance for given launch angle in radians.
+            Robust ZERO_DOWN detection: scan from the end and find the first slant-height
+            crossing where the previous point is positive and current is non-positive."""
             cdef double ca
             cdef double sa
-            cdef int apex_seen
             cdef double h_prev
             cdef double h_cur
             cdef double denom
@@ -525,62 +543,44 @@ cdef class CythonizedBaseIntegrationEngine:
             cdef Py_ssize_t i
             cdef BaseTrajC* prev_ptr
             cdef BaseTrajC* cur_ptr
-            if angle_rad in cache:
-                return cache[angle_rad]
-            
             # Update shot data
             shot_props_ptr[0].barrel_elevation = angle_rad
-            
             try:
-                # Integrate without relying on flags; we'll derive ZERO_DOWN after apex
                 result = self._integrate(shot_props_ptr, <double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE)
                 trajectory = <CBaseTrajSeq>result[0]
                 ca = cos(shot_props_ptr[0].look_angle)
                 sa = sin(shot_props_ptr[0].look_angle)
-                apex_seen = 0
-                h_prev = 0.0
-                h_cur = 0.0
-                # Iterate over raw C buffer for speed and to avoid Python attribute overhead
                 n = <Py_ssize_t>len(trajectory)
                 if n >= 2:
-                    for i in range(1, n):
+                    # Linear search from end of trajectory for zero-down crossing
+                    for i in range(n - 1, 0, -1):
                         prev_ptr = trajectory.c_getitem(i - 1)
                         cur_ptr = trajectory.c_getitem(i)
-                        # detect apex crossing (vy goes from + to <= 0)
-                        if apex_seen == 0 and prev_ptr.vy > 0.0 and cur_ptr.vy <= 0.0:
-                            apex_seen = 1
-                        if apex_seen:
-                            h_prev = prev_ptr.py * ca - prev_ptr.px * sa
-                            h_cur = cur_ptr.py * ca - cur_ptr.px * sa
-                            if h_prev >= 0.0 and h_cur <= 0.0:
-                                # Linear interpolation across the crossing for slant_height == 0
-                                denom = h_prev - h_cur
-                                if denom == 0.0:
-                                    t = 0.0
-                                else:
-                                    t = h_prev / denom
-                                # Clamp t to [0,1]
-                                if t < 0.0:
-                                    t = 0.0
-                                elif t > 1.0:
-                                    t = 1.0
-                                ix = prev_ptr.px + t * (cur_ptr.px - prev_ptr.px)
-                                iy = prev_ptr.py + t * (cur_ptr.py - prev_ptr.py)
-                                sdist = ix * ca + iy * sa
-                                cache[angle_rad] = sdist
-                                return sdist
-                # If we get here then ZERO_DOWN not found
-                cache[angle_rad] = -9e9
+                        h_prev = prev_ptr.py * ca - prev_ptr.px * sa
+                        h_cur = cur_ptr.py * ca - cur_ptr.px * sa
+                        if h_prev > 0.0 and h_cur <= 0.0:
+                            # Interpolate for slant_distance
+                            denom = h_prev - h_cur
+                            if denom == 0.0:
+                                t = 0.0
+                            else:
+                                t = h_prev / denom
+                            if t < 0.0:
+                                t = 0.0
+                            elif t > 1.0:
+                                t = 1.0
+                            ix = prev_ptr.px + t * (cur_ptr.px - prev_ptr.px)
+                            iy = prev_ptr.py + t * (cur_ptr.py - prev_ptr.py)
+                            sdist = ix * ca + iy * sa
+                            return sdist
                 return -9e9
-                
             except RangeError:
-                # Trajectory terminated early due to constraints - no valid ZERO_DOWN
-                cache[angle_rad] = -9e9
                 return -9e9
         
         yc = <double>float(range_for_angle(c))
         yd = <double>float(range_for_angle(d))
         
+        # Golden-section search
         for iteration in range(100):  # 100 iterations is more than enough for high precision
             if h < <double>1e-5:  # Angle tolerance in radians
                 break
@@ -598,7 +598,7 @@ cdef class CythonizedBaseIntegrationEngine:
         angle_at_max_rad = (a + b) / 2
         max_range_ft = <double>float(range_for_angle(angle_at_max_rad))
         
-        # Restore original constraints
+    # Restore original constraints
         if has_restore_cMaximumDrop:
             self._config_s.cMaximumDrop = restore_cMaximumDrop
         if has_restore_cMinimumVelocity:
@@ -686,104 +686,92 @@ cdef class CythonizedBaseIntegrationEngine:
             object h  # For _integrate() return object
             double current_distance, height_diff_ft, look_dist_ft, range_diff_ft
             double trajectory_angle, sensitivity, denominator, correction, applied_correction
+            double ca, sa
 
-        # Backup and adjust constraints if needed
-        if fabs(self._config_s.cMaximumDrop) < required_drop_ft:
-            restore_cMaximumDrop = self._config_s.cMaximumDrop
-            self._config_s.cMaximumDrop = required_drop_ft
-            has_restore_cMaximumDrop = 1
-        
-        if (self._config_s.cMinimumAltitude - shot_props_ptr[0].alt0) > required_drop_ft:
-            restore_cMinimumAltitude = self._config_s.cMinimumAltitude
-            self._config_s.cMinimumAltitude = shot_props_ptr[0].alt0 - required_drop_ft
-            has_restore_cMinimumAltitude = 1
-
-        while iterations_count < _cMaxIterations:
-            # Check height of trajectory at the zero distance (using current barrel_elevation)
-            h = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
-            hit = h[0].get_at('position.x', <double>target_x_ft)
-
-            if hit.time == 0.0:
-                # Integrator returned initial point - consider removing constraints
-                break
-
-            current_distance = hit.position.x  # Horizontal distance along X
-            if 2 * current_distance < target_x_ft and shot_props_ptr[0].barrel_elevation == 0.0 and look_angle_rad < 1.5:
-                # Degenerate case: little distance and zero elevation; try with some elevation
-                shot_props_ptr[0].barrel_elevation = 0.01
-                continue
+        # Backup and adjust constraints if needed, then ensure single restore via try/finally
+        try:
+            if fabs(self._config_s.cMaximumDrop) < required_drop_ft:
+                restore_cMaximumDrop = self._config_s.cMaximumDrop
+                self._config_s.cMaximumDrop = required_drop_ft
+                has_restore_cMaximumDrop = 1
             
-            ca = cos(look_angle_rad)
-            sa = sin(look_angle_rad)
-            height_diff_ft = hit.position.y * ca - hit.position.x * sa  # slant_height
-            look_dist_ft = hit.position.x * ca + hit.position.y * sa  # slant_distance
-            range_diff_ft = look_dist_ft - slant_range_ft
-            range_error_ft = fabs(range_diff_ft)
-            height_error_ft = fabs(height_diff_ft)
-            trajectory_angle = atan2(hit.velocity.y, hit.velocity.x)  # Flight angle at current distance
-            
-            # Calculate sensitivity and correction
-            sensitivity = tan(shot_props_ptr[0].barrel_elevation - look_angle_rad) * tan(trajectory_angle - look_angle_rad)
-            if sensitivity < -0.5:
-                denominator = look_dist_ft
-            else:
-                denominator = look_dist_ft * (1 + sensitivity)
-            
-            if fabs(denominator) > 1e-9:
-                correction = -height_diff_ft / denominator
-            else:
-                # Restore original constraints before raising error
-                if has_restore_cMaximumDrop:
-                    self._config_s.cMaximumDrop = restore_cMaximumDrop
-                if has_restore_cMinimumAltitude:
-                    self._config_s.cMinimumAltitude = restore_cMinimumAltitude
-                raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation),
-                                     'Correction denominator is zero')
+            if (self._config_s.cMinimumAltitude - shot_props_ptr[0].alt0) > required_drop_ft:
+                restore_cMinimumAltitude = self._config_s.cMinimumAltitude
+                self._config_s.cMinimumAltitude = shot_props_ptr[0].alt0 - required_drop_ft
+                has_restore_cMinimumAltitude = 1
 
-            if range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
-                # We're still trying to reach zero_distance
-                if range_error_ft > prev_range_error_ft - 1e-6:  # We're not getting closer to zero_distance
-                    # Restore original constraints before raising error
-                    if has_restore_cMaximumDrop:
-                        self._config_s.cMaximumDrop = restore_cMaximumDrop
-                    if has_restore_cMinimumAltitude:
-                        self._config_s.cMinimumAltitude = restore_cMinimumAltitude
-                    raise ZeroFindingError(range_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation),
-                                         'Distance non-convergent')
-            elif height_error_ft > fabs(prev_height_error_ft):  # Error is increasing, we are diverging
-                damping_factor *= damping_rate  # Apply damping to prevent overcorrection
-                if damping_factor < 0.3:
-                    # Restore original constraints before raising error
-                    if has_restore_cMaximumDrop:
-                        self._config_s.cMaximumDrop = restore_cMaximumDrop
-                    if has_restore_cMinimumAltitude:
-                        self._config_s.cMinimumAltitude = restore_cMinimumAltitude
+            while iterations_count < _cMaxIterations:
+                # Check height of trajectory at the zero distance (using current barrel_elevation)
+                h = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+                hit = h[0].get_at('position.x', <double>target_x_ft)
+
+                if hit.time == 0.0:
+                    # Integrator returned initial point - consider removing constraints
+                    break
+
+                current_distance = hit.position.x  # Horizontal distance along X
+                if 2 * current_distance < target_x_ft and shot_props_ptr[0].barrel_elevation == 0.0 and look_angle_rad < 1.5:
+                    # Degenerate case: little distance and zero elevation; try with some elevation
+                    shot_props_ptr[0].barrel_elevation = 0.01
+                    continue
+                
+                ca = cos(look_angle_rad)
+                sa = sin(look_angle_rad)
+                height_diff_ft = hit.position.y * ca - hit.position.x * sa  # slant_height
+                look_dist_ft = hit.position.x * ca + hit.position.y * sa  # slant_distance
+                range_diff_ft = look_dist_ft - slant_range_ft
+                range_error_ft = fabs(range_diff_ft)
+                height_error_ft = fabs(height_diff_ft)
+                trajectory_angle = atan2(hit.velocity.y, hit.velocity.x)  # Flight angle at current distance
+                
+                # Calculate sensitivity and correction
+                sensitivity = tan(shot_props_ptr[0].barrel_elevation - look_angle_rad) * tan(trajectory_angle - look_angle_rad)
+                if sensitivity < -0.5:
+                    denominator = look_dist_ft
+                else:
+                    denominator = look_dist_ft * (1 + sensitivity)
+                
+                if fabs(denominator) > 1e-9:
+                    correction = -height_diff_ft / denominator
+                else:
                     raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation),
-                                         'Error non-convergent')
-                # Revert previous adjustment
-                shot_props_ptr[0].barrel_elevation -= last_correction
-                correction = last_correction
-            elif damping_factor < 1.0:
-                damping_factor = 1.0
+                                         'Correction denominator is zero')
 
-            prev_range_error_ft = range_error_ft
-            prev_height_error_ft = height_error_ft
+                if range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
+                    # We're still trying to reach zero_distance
+                    if range_error_ft > prev_range_error_ft - 1e-6:  # We're not getting closer to zero_distance
+                        raise ZeroFindingError(range_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation),
+                                             'Distance non-convergent')
+                elif height_error_ft > fabs(prev_height_error_ft):  # Error is increasing, we are diverging
+                    damping_factor *= damping_rate  # Apply damping to prevent overcorrection
+                    if damping_factor < 0.3:
+                        raise ZeroFindingError(height_error_ft, iterations_count, _new_rad(<double>shot_props_ptr[0].barrel_elevation),
+                                             'Error non-convergent')
+                    # Revert previous adjustment
+                    shot_props_ptr[0].barrel_elevation -= last_correction
+                    correction = last_correction
+                elif damping_factor < 1.0:
+                    damping_factor = 1.0
 
-            if height_error_ft > _cZeroFindingAccuracy or range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
-                # Adjust barrel elevation to close height at zero distance
-                applied_correction = correction * damping_factor
-                shot_props_ptr[0].barrel_elevation += applied_correction
-                last_correction = applied_correction
-            else:  # Current barrel_elevation hit zero: success!
-                break
-            
-            iterations_count += 1
+                prev_range_error_ft = range_error_ft
+                prev_height_error_ft = height_error_ft
 
-        # Restore original constraints
-        if has_restore_cMaximumDrop:
-            self._config_s.cMaximumDrop = restore_cMaximumDrop
-        if has_restore_cMinimumAltitude:
-            self._config_s.cMinimumAltitude = restore_cMinimumAltitude
+                if height_error_ft > _cZeroFindingAccuracy or range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
+                    # Adjust barrel elevation to close height at zero distance
+                    applied_correction = correction * damping_factor
+                    shot_props_ptr[0].barrel_elevation += applied_correction
+                    last_correction = applied_correction
+                else:  # Current barrel_elevation hit zero: success!
+                    break
+                
+                iterations_count += 1
+
+        finally:
+            # Restore original constraints
+            if has_restore_cMaximumDrop:
+                self._config_s.cMaximumDrop = restore_cMaximumDrop
+            if has_restore_cMinimumAltitude:
+                self._config_s.cMinimumAltitude = restore_cMinimumAltitude
 
         if height_error_ft > _cZeroFindingAccuracy or range_error_ft > _ALLOWED_ZERO_ERROR_FEET:
             # ZeroFindingError contains an instance of last barrel elevation; so caller can check how close zero is

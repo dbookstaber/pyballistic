@@ -97,12 +97,18 @@ pytest --engine="my_lib.my_engine:MyEngineClass"  # via entry point path
 ```
 
 ### Coverage
-We use `pytest-cov` to get coverage reports
+We use `pytest-cov` to get coverage reports:
 ```shell
 pytest --cov=py_ballisticcalc --cov-report=html  # for default engine
-pytest --cov=py_ballisticcalc --cov-report=html --engine=py-ballisticcalc # for custom engine 
+pytest --cov=py_ballisticcalc --cov-report=html --engine="scipy_engine"  # for custom engine 
 ```
 
+To get coverage of Cython, set the environment variable `CYTHON_COVERAGE = '1'`, rebuild `py_ballisticcalc.exts` (from project root: `pip install -e py_ballisticcalc.exts`), then run:
+
+```shell
+python scripts\sync_cython_sources.py
+pytest --engine="cythonized_rk4_engine" --cov=py_ballisticcalc --cov=py_ballisticcalc_exts --cov-report=html
+```
 
 ### Documentation
 

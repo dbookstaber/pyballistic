@@ -809,7 +809,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         if restore_cMinimumAltitude is not None:
             self._config.cMinimumAltitude = restore_cMinimumAltitude
 
-        result = Angular.Radian(props.barrel_elevation_rad)
+        result: Angular = Angular.Radian(props.barrel_elevation_rad)
         if height_error_ft > _cZeroFindingAccuracy or range_error_ft > self.ALLOWED_ZERO_ERROR_FEET:
             # ZeroFindingError contains an instance of last barrel elevation; so caller can check how close zero is
             raise ZeroFindingError(height_error_ft, iterations_count, result)

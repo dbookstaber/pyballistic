@@ -1,6 +1,5 @@
 # pxd for py_ballisticcalc_exts.base_engine
 
-from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT
 from py_ballisticcalc_exts.cy_bindings cimport Config_t, Wind_t, ShotProps_t
 from py_ballisticcalc_exts.v3d cimport V3dT
 
@@ -35,11 +34,11 @@ cdef class CythonizedBaseIntegrationEngine:
     cdef:
         public int integration_step_count
         public object _config
-        list _table_data # list[object]
+        list _table_data  # list[object]
         V3dT gravity_vector
         WindSock_t * _wind_sock
-        Config_t _config_s # Declared here
-        ShotProps_t _shot_s # Declared here
+        Config_t _config_s  # Declared here
+        ShotProps_t _shot_s  # Declared here
 
     # cdef void __dealloc__(CythonizedBaseIntegrationEngine self) # Uncomment if you want to declare __dealloc__
     cdef double get_calc_step(CythonizedBaseIntegrationEngine self)
@@ -57,6 +56,8 @@ cdef class CythonizedBaseIntegrationEngine:
     cdef object _zero_angle(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, double distance)
     cdef tuple _find_max_range(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, tuple angle_bracket_deg = *)
     cdef object _find_apex(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr)
+    cdef double _error_at_distance(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr,
+                                   double angle_rad, double target_x_ft, double target_y_ft)
     # In contrast to Python engines, _integrate here returns (CBaseTrajSeq, Optional[error_str])
     cdef object _integrate(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr,
                            double range_limit_ft, double range_step_ft, double time_step, int filter_flags)
