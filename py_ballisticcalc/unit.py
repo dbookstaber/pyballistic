@@ -1,9 +1,69 @@
-"""
-Units of measurement and conversion for ballistic calculations
+"""Unit conversion system for ballistic calculations.
+
+This module provides a comprehensive type-safe unit conversion system, supporting physical dimensions
+including distance, velocity, angular measurements, temperature, pressure, weight, energy, and time.
+
+The system uses a base class `GenericDimension` with specialized subclasses for each physical dimension.
+Each dimension maintains its values internally in a fixed raw unit (e.g., inches for distance, m/s for velocity)
+and provides conversion methods to any supported unit within that dimension.
+
+Key Features:
+    * Type-safe unit conversions with compile-time checking
+    * Flexible conversion syntax with operator overloading
+    * Default preferred units configuration
+    * String parsing and unit alias resolution
+    * Integration with ballistic calculation engines
+
+Typical Usage:
+    >>> from py_ballisticcalc.unit import Distance, Velocity, Unit
+    >>> # Create distance measurement
+    >>> distance = Distance(100, Distance.Meter)
+    >>> # Convert to different units
+    >>> yards = distance.convert(Distance.Yard)
+    >>> # Alternative conversion syntax
+    >>> yards = distance << Distance.Yard
+    >>> # Get numeric value in specific units
+    >>> yard_value = distance.get_in(Distance.Yard)
+    >>> print(f"100m = {yard_value:.1f} yards")
+
+Supported Dimensions:
+    * Distance: inch, foot, yard, mile, nautical mile, mm, cm, m, km, line
+    * Velocity: m/s, km/h, ft/s, mph, knots
+    * Angular: radian, degree, MOA, mil, mrad, thousandth, inch/100yd, cm/100m, o'clock
+    * Temperature: Fahrenheit, Celsius, Kelvin, Rankine
+    * Pressure: mmHg, inHg, bar, hPa, PSI
+    * Weight: grain, ounce, gram, pound, kilogram, newton
+    * Energy: foot-pound, joule
+    * Time: second, minute, millisecond, microsecond, nanosecond, picosecond
+
+The module also provides `PreferredUnits` configuration for setting default units that apply
+throughout the ballistic calculation system, and comprehensive string parsing capabilities for input processing.
+
+Examples:
+    Basic unit creation and conversion:
+        >>> distance = Distance.Meter(300)
+        >>> range_yards = distance.convert(Distance.Yard)
+        >>> print(f"300m = {range_yards}")
+
+    Working with velocity:
+        >>> muzzle_velocity = Velocity.FPS(2800)
+        >>> velocity_mps = muzzle_velocity >> Velocity.MPS
+        >>> print(f"2800 ft/s = {velocity_mps:.1f} m/s")
+
+    Angular measurements for ballistics:
+        >>> elevation = Angular.MOA(2.5)
+        >>> elevation_mils = elevation << Angular.Mil
+        >>> print(f"2.5 MOA = {elevation_mils:.3f} mils")
+
+    Setting preferred units:
+        >>> PreferredUnits.distance = Unit.Meter
+        >>> PreferredUnits.velocity = Unit.MPS
+        >>> # Now ballistic calculations will use metric units by default
 """
 
+# Standard library imports
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, MISSING
 from enum import IntEnum
 from math import pi
 from typing import NamedTuple, Union, TypeVar, Optional, Tuple, Final, Protocol, runtime_checkable, \
@@ -11,6 +71,7 @@ from typing import NamedTuple, Union, TypeVar, Optional, Tuple, Final, Protocol,
 
 from typing_extensions import Self, TypeAlias, override
 
+# Local imports
 from py_ballisticcalc.exceptions import UnitTypeError, UnitConversionError, UnitAliasError
 from py_ballisticcalc.logger import logger
 
@@ -19,22 +80,37 @@ MAX_ITERATIONS = 1e6
 
 
 def counter(start: Number = 0, step: Number = 1, end: Optional[Number] = None) -> Iterable[Number]:
-    """Generates a sequence of numbers starting at 'start',
-    with a step of 'step', up to (but not including) 'end', or infinitely.
+    """Generate a sequence of numbers with optional bounds.
+
+    Creates an arithmetic sequence starting at 'start' with a constant increment/decrement of 'step'.
+    Can generate infinite sequences or bounded sequences up to 'end'.
 
     Args:
-        start (int | float): Initial value.
-        step (int | float): Increment/decrement step. Cannot be 0 for infinite iteration.
-        end (int | float, optional): The final value (not including).
-                                   If None, the iteration will be infinite.
+        start: Initial value for the sequence. Defaults to 0.
+        step: Increment/decrement step value. Cannot be 0 for infinite iteration.
+              Positive values create ascending sequences, negative values create descending sequences. Defaults to 1.
+        end: Final value (exclusive) for bounded sequences. If None, creates an infinite sequence. Defaults to None.
 
     Yields:
-        int | float: The next value in the sequence.
+        Number: The next value in the arithmetic sequence.
 
     Raises:
-        ValueError:
-            If 'step' is 0 for infinite iteration, or if 'step' has the wrong
-            direction for the given 'start' and 'end' range.
+        ValueError: If 'step' is 0 for infinite iteration, or if 'step' has the wrong sign
+                    for the given 'start' and 'end' range (e.g., positive step with start > end).
+
+    Examples:
+        >>> # Finite ascending sequence
+        >>> list(counter(0, 1, 5))
+        [0, 1, 2, 3, 4]
+        
+        >>> # Finite descending sequence
+        >>> list(counter(10, -2, 0))
+        [10, 8, 6, 4, 2]
+        
+        >>> # Infinite sequence (first 3 values)
+        >>> iter_seq = counter(1, 0.5)
+        >>> [next(iter_seq) for _ in range(3)]
+        [1, 1.5, 2.0]
     """
     if step == 0:
         if end is None:
@@ -68,6 +144,39 @@ def iterator(items: Sequence[Number], /, *,
              sort: bool = False,
              key: Optional[Callable[[Number], Any]] = None,
              reverse: bool = False) -> Generator[Number, None, None]:
+    """Create a generator from a sequence of numbers with optional sorting.
+
+    Provides a flexible iterator interface for numeric sequences.
+    Supports optional sorting with custom key functions and reverse ordering.
+
+    Args:
+        items: Sequence of numeric values (integers or floats) to iterate over.
+        sort: If True, sort the items before iteration. Defaults to False.
+        key: Optional function to extract comparison key from each item.
+             Used only when sort=True. Defaults to None.
+        reverse: If True, reverse the iteration order (used with sorting).
+                 Defaults to False.
+
+    Yields:
+        Number: Each numeric value from the sequence in the specified order.
+
+    Examples:
+        >>> # Basic iteration
+        >>> list(iterator([3, 1, 4, 2]))
+        [3, 1, 4, 2]
+        
+        >>> # Sorted iteration
+        >>> list(iterator([3, 1, 4, 2], sort=True))
+        [1, 2, 3, 4]
+        
+        >>> # Reverse sorted iteration
+        >>> list(iterator([3, 1, 4, 2], sort=True, reverse=True))
+        [4, 3, 2, 1]
+        
+        >>> # Custom key function
+        >>> list(iterator([-3, 1, -4, 2], sort=True, key=abs))
+        [1, 2, -3, -4]
+    """
     if sort:
         items = sorted(items, key=key, reverse=reverse)
     for v in items:
@@ -87,14 +196,50 @@ class Comparable(Protocol):
     def __ge__(self, other: Self) -> bool: ...
 
 
-# pylint: disable=invalid-name
 _GenericDimensionType = TypeVar('_GenericDimensionType', bound='GenericDimension')
 
 
-# pylint: disable=invalid-name
 class Unit(IntEnum):
-    """
-    Usage of IntEnum simplify data serializing for using it with databases etc.
+    """Enumeration of all supported unit types.
+
+    Angular Units:
+    - Radian, Degree, MOA (Minute of Arc), Mil, MRad (Milliradian), Thousandth, InchesPer100Yd, CmPer100m, OClock
+    
+    Distance Units:
+    - Inch, Foot, Yard, Mile, NauticalMile, Millimeter, Centimeter, Meter, Kilometer, Line
+    
+    Velocity Units:
+    - MPS (meters/second), KMH (km/hour), FPS (feet/second), MPH (miles/hour), KT (knots)
+    
+    Weight Units:
+    - Grain, Ounce, Gram, Pound, Kilogram, Newton
+    
+    Pressure Units:
+    - MmHg, InHg, Bar, hPa (hectopascal), PSI
+    
+    Temperature Units:
+    - Fahrenheit, Celsius, Kelvin, Rankin
+    
+    Energy Units:
+    - FootPound, Joule
+    
+    Time Units:
+    - Second, Minute, Millisecond, Microsecond, Nanosecond, Picosecond
+
+    Each unit can be used as a callable constructor for creating unit instances:
+
+    Examples:
+        >>> # Create distance measurements
+        >>> distance = Unit.Meter(100)
+        >>> range_yards = Unit.Yard(109.4)
+        
+        >>> # Create velocity measurements
+        >>> muzzle_velocity = Unit.FPS(2800)
+        >>> velocity_mps = Unit.MPS(853.4)
+        
+        >>> # Angular measurements for ballistics
+        >>> elevation = Unit.MOA(2.5)
+        >>> windage = Unit.Mil(1.2)
     """
     Radian = 0
     Degree = 1
@@ -153,35 +298,35 @@ class Unit(IntEnum):
 
     @property
     def key(self) -> str:
-        """
-        :return: readable name of the unit of measure
-        """
+        """Readable name of the unit of measure"""
         return UnitPropsDict[self].name
 
     @property
     def accuracy(self) -> int:
-        """
-        :return: default accuracy of the unit of measure
-        """
+        """Default accuracy of the unit of measure"""
         return UnitPropsDict[self].accuracy
 
     @property
     def symbol(self) -> str:
-        """
-        :return: short symbol of the unit of measure in CI
-        """
+        """Short symbol of the unit of measure"""
         return UnitPropsDict[self].symbol
 
     def __repr__(self) -> str:
         return UnitPropsDict[self].name
 
     def __call__(self: Self, value: Union[Number, _GenericDimensionType]) -> _GenericDimensionType:
-        """Creates new unit instance by dot syntax
-        :param self: unit as Unit enum
-        :param value: numeric value of the unit
-        :return: AbstractUnit instance
-        """
+        """Creates a new unit instance using dot syntax.
 
+        Args:
+            value (Union[Number, _GenericDimensionType]): Numeric value of the unit
+                                                          or an existing GenericDimension instance.
+
+        Returns:
+            _GenericDimensionType: An instance of the corresponding unit dimension.
+
+        Raises:
+            UnitTypeError: If the unit type is not supported.
+        """
         obj: GenericDimension
         if isinstance(value, GenericDimension):
             return value << self  # type: ignore
@@ -206,7 +351,7 @@ class Unit(IntEnum):
         return obj  # type: ignore
 
     def counter(self, start: Number, step: Number,
-                end: Optional[Number] = None, include_end: bool = True) -> Generator[_GenericDimensionType, None, None]:
+            end: Optional[Number] = None, include_end: bool = True) -> Generator[_GenericDimensionType, None, None]:
         """Generates a finite or infinite sequence of `GenericDimension` objects.
 
         This function acts as a counter for measurements, yielding `GenericDimension`
@@ -215,27 +360,24 @@ class Unit(IntEnum):
 
         Args:
             self (Unit): The unit to apply to each generated numeric value (e.g., `Unit.Meter`, `Unit.Second`).
-                It is assumed that calling `Unit.<member>(value)` returns an instance of the
-                specific `GenericDimension` type desired.
             start (int | float): The starting raw value for the sequence. Defaults to 0.
             step (int | float): The increment/decrement step for the sequence.
-                               Must not be 0 for an infinite sequence. Defaults to 0.
+                                Must not be 0 for an infinite sequence. Defaults to 0.
             end (int | float, optional): The raw value at which the sequence should stop (exclusive by default).
-                                       If `None`, the sequence is infinite. Defaults to `None`.
+                                         If `None`, the sequence is infinite. Defaults to `None`.
             include_end (bool): If `True` and `end` is provided, the `end` value will be
                                 included in the sequence. Defaults to `True`.
 
         Yields:
-            _GenericDimensionType: A `GenericDimension` object of the specific type implied by `u`, representing the current
-                measurement in the sequence.
+            _GenericDimensionType: A `GenericDimension` object of the specific type implied by `u`,
+                                   representing the current measurement in the sequence.
 
         Raises:
             ValueError:
                 If `step` is 0 for an infinite sequence, or if `step` has the wrong
                 direction for the given `start` and `end` range.
             StopIteration:
-                If the maximum iteration limit (`MAX_ITERATIONS`) is reached during
-                an infinite sequence.
+                If the iteration limit (`MAX_ITERATIONS`) is reached during an infinite sequence.
 
         Examples:
             >>> from py_ballisticcalc import Distance, Unit
@@ -266,19 +408,17 @@ class Unit(IntEnum):
 
         Args:
             self (Unit): The unit to apply to each numeric value (e.g., `Unit.Meter`, `Unit.FPS`).
-                It is assumed that calling `Unit.<member>(value)` returns an instance of the
-                specific `GenericDimension` type desired.
             items (Sequence[int | float]): A sequence of raw numeric values (integers or floats).
-            sort: (bool): If set to `True`, the elements will be sorted before yield
+            sort: (bool): If set to `True`, the elements will be sorted before yield.
             reverse (bool): If set to `True`, the elements are sorted in descending order.
-                Defaults to `False`.
+                            Defaults to `False`.
 
         Yields:
             _GenericDimensionType: A `GenericDimension` object of the specific type implied by `u`, in sorted order.
 
         Examples:
             >>> from py_ballisticcalc import Distance, Unit
-            >>> list(Unit.Meter.iterator([300, 100, 200])) # Inferred as Iterable[Distance]
+            >>> list(Unit.Meter.iterator([300, 100, 200], sort=True))  # Inferred as Iterable[Distance]
             [Distance(100), Distance(200), Distance(300)]
         """
         iter_ = iterator(items, sort=sort, reverse=reverse)
@@ -287,7 +427,22 @@ class Unit(IntEnum):
 
 
 class UnitProps(NamedTuple):
-    """Properties of unit measure"""
+    """Properties and display characteristics for unit measurements.
+
+    Attributes:
+        name: Human-readable name of the unit (e.g., 'meter', 'foot-pound').
+        accuracy: Number of decimal places for formatting values for display.
+        symbol: Standard symbol or abbreviation for the unit (e.g., 'm', 'ft·lb').
+
+    Examples:
+        >>> from py_ballisticcalc import Distance, Unit, UnitProps, UnitPropsDict
+        >>> d = Distance.Yard(600)
+        >>> print(d << Distance.Kilometer)
+        0.549km
+        >>> UnitPropsDict[Unit.Kilometer] = UnitProps("kilometer", 5, " kilometers")
+        >>> print(d << Distance.Kilometer)
+        0.54864 kilometers
+    """
     name: str
     accuracy: int
     symbol: str
@@ -374,12 +529,11 @@ UnitAliases: UnitAliasesType = {
     ('kilometer', 'km'): Unit.Kilometer,
     ('line', 'ln', 'liniа'): Unit.Line,
 
-    ('footpound', 'foot-pound', 'ft⋅lbf', 'ft⋅lbf', 'ft⋅lb',
-     'foot*pound', 'ft*lbf', 'ft*lbf', 'ft*lb'): Unit.FootPound,
+    ('footpound', 'foot-pound', 'ft⋅lbf', 'ft⋅lb', 'foot*pound', 'ft*lbf', 'ft*lb'): Unit.FootPound,
     ('joule', 'J'): Unit.Joule,
 
     ('mmHg',): Unit.MmHg,
-    ('inHg', '″Hg'): Unit.InHg,
+    ('inHg', '"Hg'): Unit.InHg,
     ('bar',): Unit.Bar,
     ('hectopascal', 'hPa'): Unit.hPa,
     ('psi', 'lbf/in2'): Unit.PSI,
@@ -450,8 +604,26 @@ class Measurable(SupportsFloat, SupportsInt, Hashable, Comparable, Protocol):
 
 
 class GenericDimension(Generic[_GenericDimensionType]):
-    """Abstract class for units of measure.
-        Stores defined unit and value, applies conversions to related Units.
+    """Abstract base class for typed unit dimensions.
+
+    This class provides the foundation for all unit measurements in the ballistic
+    calculation system. Each dimension (Distance, Velocity, Angular, etc.) inherits
+    from this class and defines its own conversion factors and raw unit representation.
+
+    Attributes:
+        _value: Internal value stored in the dimension's raw unit.
+        _defined_units: The unit type this instance was created with.
+        _conversion_factors: Mapping of units to their conversion factors.
+
+    Examples:
+        >>> # Subclasses define their own conversion factors
+        >>> class Distance(GenericDimension):
+        ...     _conversion_factors = {Unit.Meter: 39.3701, Unit.Yard: 36.0}
+        
+        >>> # Create and convert measurements
+        >>> meters = Distance(100, Unit.Meter)
+        >>> yards = meters.convert(Unit.Yard)
+        >>> print(f"100m = {yards.unit_value:.1f} yards")
     """
     _value: Number
     _defined_units: Unit
@@ -459,16 +631,24 @@ class GenericDimension(Generic[_GenericDimensionType]):
     _conversion_factors: Mapping[Unit, float] = {}
 
     def __init__(self, value: Number, units: Unit):
-        """
-        :param units: unit as Unit enum
-        :param value: numeric value of the unit
+        """Initialize a unit measurement with value and unit type.
+
+        Args:
+            value: Numeric value of the measurement in the specified units.
+            units: Unit enum specifying the unit type for the value.
         """
         self._value: Number = self.__class__.to_raw(value, units)
         self._defined_units: Unit = units
 
     def __str__(self) -> str:
-        """
-        :return: readable unit value
+        """Human-readable string representation of the unit measurement.
+
+        Returns:
+            Formatted string showing the value rounded to appropriate precision
+            followed by the unit symbol (e.g., "100.0m", "2800ft/s").
+
+        Note:
+            The precision is determined by the unit's `accuracy` property defined in UnitPropsDict.
         """
         units = self._defined_units
         props = UnitPropsDict[units]
@@ -476,8 +656,11 @@ class GenericDimension(Generic[_GenericDimensionType]):
         return f'{round(v, props.accuracy)}{props.symbol}'
 
     def __repr__(self) -> str:
-        """
-        :return: instance as readable view
+        """Detailed string representation for debugging.
+
+        Returns:
+            String showing class name, formatted unit value, and raw internal value
+            (e.g., "<Distance: 100.0m (3937.01)>").
         """
         return f'<{self.__class__.__name__}: {self << self.units} ({round(self._value, 4)})>'
 
@@ -507,7 +690,17 @@ class GenericDimension(Generic[_GenericDimensionType]):
 
     @classmethod
     def _validate_unit_type(cls, units: Unit):
-        """Ensures units are members of the same Dimension."""
+        """Validate that units are compatible with this dimension.
+
+        Args:
+            units: Unit type to validate.
+
+        Raises:
+            UnitConversionError: If the unit is not supported by this dimension.
+
+        Note:
+            Checks that the unit exists in this dimension's conversion factors.
+        """
         if not isinstance(units, Unit):
             err_msg = f"Type expected: {Unit}, {type(Unit).__name__}; got: {type(units).__name__} ({units})"
             raise TypeError(err_msg)
@@ -521,53 +714,118 @@ class GenericDimension(Generic[_GenericDimensionType]):
 
     @classmethod
     def new_from_raw(cls, raw_value: float, to_units: Unit) -> Self:
-        """Create a new instance from a raw value (in base units), converting to the specified units."""
+        """Create a new instance from a raw value in base units.
+
+        Args:
+            raw_value: Value in the dimension's raw unit (e.g., inches for Distance).
+            to_units: Target unit type for the new instance.
+
+        Returns:
+            New instance with the raw value converted to the specified units.
+        """
         value_in_units = raw_value / cls._get_conversion_factor(to_units)
         return cls(value_in_units, to_units)
 
     @classmethod
     def from_raw(cls, raw_value: float, unit: Unit) -> Number:
-        """Converts raw value to a number dimensioned in the specified Units."""
+        """Convert a raw value to the specified units.
+
+        Args:
+            raw_value: Value in the dimension's raw unit.
+            unit: Target unit type for conversion.
+
+        Returns:
+            Numeric value converted to the specified units.
+
+        Note:
+            Static conversion method that doesn't create a unit instance.
+        """
         cls._validate_unit_type(unit)
         return raw_value / cls._get_conversion_factor(unit)
         
     @classmethod
     def to_raw(cls, value: Number, units: Unit) -> Number:
-        """Converts value in specified Unit to the Dimension's raw value."""
+        """Convert a value in specified units to the raw unit.
+
+        Args:
+            value: Numeric value to convert.
+            units: Unit type of the input value.
+
+        Returns:
+            Value converted to the dimension's raw unit.
+
+        Note:
+            Used internally for storing values in consistent raw units.
+        """
         cls._validate_unit_type(units)
         return value * cls._get_conversion_factor(units)
 
     def convert(self, units: Unit) -> Self:
-        """Returns Dimension instance of the value in the specified Units.
-        :param units: Unit enum type
-        :return: new unit instance in specified Units
+        """Convert this measurement to different units within the same dimension.
+
+        Args:
+            units: Target unit type for conversion.
+
+        Returns:
+            New instance of the same dimension type with value in target units.
+
+        Raises:
+            UnitConversionError: If target units are incompatible with this dimension.
+
+        Examples:
+            >>> distance = Distance(100, Distance.Meter)
+            >>> yards = distance.convert(Distance.Yard)
+            >>> print(f"100m = {yards}")  # 100m = 109.4yd
         """
         self._defined_units = units
         return self
 
     def get_in(self, units: Unit) -> Number:
-        """
-        :param units: Unit enum type
-        :return: value in specified Units
+        """Get the numeric value of this measurement in specified units.
+
+        Args:
+            units: Target unit type for the value.
+
+        Returns:
+            Numeric value in the specified units (float or int).
+
+        Raises:
+            UnitConversionError: If target units are incompatible with this dimension.
+
+        Examples:
+            >>> distance = Distance(100, Distance.Meter)
+            >>> yard_value = distance.get_in(Distance.Yard)
+            >>> print(f"100m = {yard_value:.1f} yards")  # 100m = 109.4 yards
         """
         return self.__class__.from_raw(self._value, units)
 
     @property
     def units(self) -> Unit:
-        """
-        :return: defined Units
+        """Get the unit type this dimension instance was defined with.
+
+        Returns:
+            Unit enum representing the unit type of this measurement.
         """
         return self._defined_units
 
     @property
     def unit_value(self) -> Number:
-        """Returns float value in defined Units"""
+        """Get the numeric value in the defined units.
+
+        Returns:
+            Numeric value in the units this measurement was created with.
+
+        Note:
+            Equivalent to get_in(self.units) but more efficient as a property.
+        """
         return self.get_in(self.units)
 
     @property
     def raw_value(self) -> Number:
-        """Raw unit value getter
-        :return: raw unit value
+        """Get the internal raw value used for calculations.
+
+        Returns:
+            Numeric value in the dimension's raw unit (e.g., inches for Distance).
         """
         return self._value
 
@@ -578,7 +836,7 @@ class GenericDimension(Generic[_GenericDimensionType]):
 
 
 class Distance(GenericDimension):
-    """Distance unit.  Raw value is inches."""
+    """Distance measurements.  Raw value is inches."""
 
     _conversion_factors = {
         Unit.Inch: 1.,
@@ -595,24 +853,15 @@ class Distance(GenericDimension):
 
     @property
     def _inch(self) -> Number:
-        """
-        Internal shortcut for `>> Distance.Inch`
-
-        Returns:
-            Number: The distance in inches.
-        """
+        """Shortcut for `>> Distance.Inch`"""
         return self._value
 
     @property
     def _feet(self) -> Number:
-        """
-        Internal shortcut for `>> Distance.Foot`
-
-        Returns:
-            Number: The distance in feet.
-        """
+        """Shortcut for `>> Distance.Foot`"""
         return self._value / 12
 
+    # Distance.* unit aliases
     Inch: Final[Unit] = Unit.Inch
     Foot: Final[Unit] = Unit.Foot
     Feet: Final[Unit] = Unit.Foot
@@ -637,6 +886,7 @@ class Pressure(GenericDimension):
         Unit.PSI: 51.714924102396
     }
 
+    # Pressure.* unit aliases
     MmHg: Final[Unit] = Unit.MmHg
     InHg: Final[Unit] = Unit.InHg
     Bar: Final[Unit] = Unit.Bar
@@ -658,14 +908,10 @@ class Weight(GenericDimension):
 
     @property
     def _grain(self) -> Number:
-        """
-        Internal shortcut for `>> Weight.Grain`
-
-        Returns:
-            Number: The weight in grains.
-        """
+        """Shortcut for `>> Weight.Grain`"""
         return self._value
 
+    # Weight.* unit aliases
     Grain: Final[Unit] = Unit.Grain
     Ounce: Final[Unit] = Unit.Ounce
     Gram: Final[Unit] = Unit.Gram
@@ -686,12 +932,7 @@ class Temperature(GenericDimension):
 
     @property
     def _F(self) -> Number:
-        """
-        Internal shortcut for `>> Temperature.Fahrenheit`
-
-        Returns:
-            Number: The temperature in degrees Fahrenheit.
-        """
+        """Shortcut for `>> Temperature.Fahrenheit`"""
         return self._value
 
     @override
@@ -724,6 +965,7 @@ class Temperature(GenericDimension):
             raise UnitConversionError(f"Temperature does not support {unit}")
         return result
 
+    # Temperature.* unit aliases
     Fahrenheit: Final[Unit] = Unit.Fahrenheit
     Celsius: Final[Unit] = Unit.Celsius
     Kelvin: Final[Unit] = Unit.Kelvin
@@ -731,7 +973,7 @@ class Temperature(GenericDimension):
 
 
 class Angular(GenericDimension):
-    """Angular unit.  Raw value is radians."""
+    """Angular measurements.  Raw value is radians."""
 
     _conversion_factors = {
         Unit.Radian: 1.,
@@ -747,23 +989,19 @@ class Angular(GenericDimension):
 
     @property
     def _rad(self):
-        """
-        Internal shortcut for `>> Angular.Radian`
-
-        Returns:
-            Number: The value in radians.
-        """
+        """Shortcut for `>> Angular.Radian`"""
         return self._value
 
     @override
     @classmethod
     def to_raw(cls, value: Number, units: Unit) -> Number:
-        """Avoid going in circles."""
+        """Avoid going in circles: Truncates to [0, 2π)"""
         radians = super().to_raw(value, units)
         if radians > 2. * pi:
             radians = radians % (2. * pi)
         return radians
 
+    # Angular.* unit aliases
     Radian: Final[Unit] = Unit.Radian
     Degree: Final[Unit] = Unit.Degree
     MOA: Final[Unit] = Unit.MOA
@@ -776,7 +1014,7 @@ class Angular(GenericDimension):
 
 
 class Velocity(GenericDimension):
-    """Velocity unit.  Raw value is meters per second."""
+    """Velocity measurements.  Raw unit is meters per second."""
 
     _conversion_factors = {
         Unit.MPS: 1.,
@@ -788,14 +1026,10 @@ class Velocity(GenericDimension):
 
     @property
     def _fps(self) -> Number:
-        """
-        Internal shortcut for `>> Velocity.FPS`
-
-        Returns:
-            Number: The velocity in fps.
-        """
+        """Shortcut for `>> Velocity.FPS`"""
         return self._value * 3.2808399
 
+    # Velocity.* unit aliases
     MPS: Final[Unit] = Unit.MPS
     KMH: Final[Unit] = Unit.KMH
     FPS: Final[Unit] = Unit.FPS
@@ -804,19 +1038,20 @@ class Velocity(GenericDimension):
 
 
 class Energy(GenericDimension):
-    """Energy unit.  Raw value is foot-pounds."""
+    """Energy measurements.  Raw unit is foot-pounds."""
 
     _conversion_factors = {
         Unit.FootPound: 1.,
         Unit.Joule: 1.3558179483314,
     }
 
+    # Energy.* unit aliases
     FootPound: Final = Unit.FootPound
     Joule: Final = Unit.Joule
 
 
 class Time(GenericDimension):
-    """Time unit.  Raw value is seconds."""
+    """Time measurements.  Raw unit is seconds."""
 
     _conversion_factors = {
         Unit.Second: 1.,
@@ -829,15 +1064,10 @@ class Time(GenericDimension):
 
     @property
     def _seconds(self) -> Number:
-        """
-        Internal shortcut for `>> Time.Seconds`
-
-        Returns:
-            Number: The value in seconds.
-        """
+        """Shortcut for `>> Time.Second`"""
         return self._value
 
-    # Define the Unit constants for Time
+    # Time.* unit aliases
     Minute: Final[Unit] = Unit.Minute
     Second: Final[Unit] = Unit.Second
     Millisecond: Final[Unit] = Unit.Millisecond
@@ -855,8 +1085,51 @@ class PreferredUnitsMeta(type):
 
 @dataclass
 class PreferredUnits(metaclass=PreferredUnitsMeta):  # pylint: disable=too-many-instance-attributes
-    """Default Units for specified measures"""
+    """Configuration class for default units used throughout ballistic calculations.
 
+    This class defines the default units that will be used when creating measurements
+    without explicitly specifying units, and for displaying results in user interfaces.
+    It provides a centralized way to configure unit preferences for an entire ballistic
+    calculation session. This allows users to set their preferred unit system once and
+    have it apply to all subsequent calculations.
+
+    Default Configuration:
+        * angular: Degree (for look-angle and barrel elevation)
+        * distance: Yard (traditional ballistic range unit)
+        * velocity: FPS (feet per second)
+        * pressure: InHg (inches of mercury, for barometric pressure)
+        * temperature: Fahrenheit
+        * diameter: Inch (bullet and bore diameter)
+        * length: Inch (bullet length, barrel length)
+        * weight: Grain (bullet weight, powder charge)
+        * adjustment: Mil (scope adjustment increments)
+        * drop: Inch (trajectory vertical measurements)
+        * energy: FootPound (kinetic energy)
+        * ogw: Pound (optimal game weight)
+        * sight_height: Inch (scope height above bore)
+        * target_height: Inch (target dimensions)
+        * twist: Inch (barrel twist rate)
+        * time: Second (flight time)
+
+    Examples:
+        >>> # Set metric preferences
+        >>> PreferredUnits.distance = Unit.Meter
+        >>> PreferredUnits.velocity = Unit.MPS
+        
+        >>> # Reset to defaults
+        >>> PreferredUnits.defaults()
+        
+        >>> # Bulk configuration
+        >>> PreferredUnits.set(
+        ...     distance='meter',
+        ...     velocity='mps',
+        ...     temperature='celsius'
+        ... )
+
+    Note:
+        Changing preferred units affects all subsequent unit creation and display.
+    """
+    # Defaults
     angular: Unit = Unit.Degree
     distance: Unit = Unit.Yard
     velocity: Unit = Unit.FPS
@@ -876,29 +1149,56 @@ class PreferredUnits(metaclass=PreferredUnitsMeta):  # pylint: disable=too-many-
 
     @classmethod
     def defaults(cls):
-        """resets preferred units to defaults"""
-        cls.angular = Unit.Degree
-        cls.distance = Unit.Yard
-        cls.velocity = Unit.FPS
-        cls.pressure = Unit.InHg
-        cls.temperature = Unit.Fahrenheit
-        cls.diameter = Unit.Inch
-        cls.length = Unit.Inch
-        cls.weight = Unit.Grain
-        cls.adjustment = Unit.Mil
-        cls.drop = Unit.Inch
-        cls.energy = Unit.FootPound
-        cls.ogw = Unit.Pound
-        cls.sight_height = Unit.Inch
-        cls.target_height = Unit.Inch
-        cls.twist = Unit.Inch
-        cls.time = Unit.Second
+        """Reset all preferred units to their default values.
+
+        Examples:
+            >>> # Changing default distance units:
+            >>> PreferredUnits.distance = Unit.Meter
+            >>> # Reset to defaults
+            >>> PreferredUnits.defaults()
+            >>> PreferredUnits.distance
+            yard
+        """
+        for f in fields(cls):
+            if f.default is not MISSING:
+                setattr(cls, f.name, f.default)
+            elif getattr(f, "default_factory", MISSING) is not MISSING:
+                setattr(cls, f.name, f.default_factory())
 
     @classmethod
     def set(cls, **kwargs):
-        """set preferred units from Mapping"""
-        for attribute, value in kwargs.items():
+        """Set preferred units from keyword arguments.
 
+        Allows bulk configuration of preferred units using either Unit enum values or string aliases.
+        Invalid attributes or values are logged as warnings but do not raise exceptions.
+
+        Args:
+            **kwargs: Keyword arguments where keys are attribute names and values
+                      are either Unit enum values or (string) UnitAliases.
+
+        Examples:
+            >>> # Set using Unit enums
+            >>> PreferredUnits.set(
+            ...     distance=Unit.Meter,
+            ...     velocity=Unit.MPS,
+            ...     temperature=Unit.Celsius
+            ... )
+            
+            >>> # Set using string aliases
+            >>> PreferredUnits.set(
+            ...     distance='meter',
+            ...     velocity='mps',
+            ...     weight='gram'
+            ... )
+            
+            >>> # Mixed types
+            >>> PreferredUnits.set(
+            ...     distance=Unit.Yard,
+            ...     velocity='fps',
+            ...     adjustment='mil'
+            ... )
+        """
+        for attribute, value in kwargs.items():
             if hasattr(PreferredUnits, attribute):
                 if isinstance(value, Unit):
                     setattr(PreferredUnits, attribute, value)
@@ -916,8 +1216,15 @@ class PreferredUnits(metaclass=PreferredUnitsMeta):  # pylint: disable=too-many-
 
 
 def _find_unit_by_alias(string_to_find: str, aliases: UnitAliasesType) -> Optional[Unit]:
-    """Find unit type by string and aliases dict"""
+    """Find a unit type by searching through a dictionary that maps strings to Units.
 
+    Args:
+        string_to_find: String to search for in the alias mappings.
+        aliases: Dictionary mapping alias tuples to Unit enum values.
+
+    Returns:
+        Unit enum if a match is found, None otherwise.
+    """
     # Iterate over the keys of the dictionary
     for aliases_tuple in aliases.keys():
         # Check if the string is present in any of the tuples
@@ -928,8 +1235,28 @@ def _find_unit_by_alias(string_to_find: str, aliases: UnitAliasesType) -> Option
 
 
 def _parse_unit(input_: str) -> Union[Unit, None, Any]:
-    """Parse the unit type from string"""
+    """Parse a unit type from a string representation.
 
+    Attempts to parse a string into a Unit enum using multiple methods:
+    1. Check if it's a preferred unit attribute name
+    2. Try direct Unit enum lookup
+    3. Search through UnitAliases
+
+    Args:
+        input_: String representation of a unit to parse.
+
+    Returns:
+        Unit enum if parsing succeeds, None if no match found.
+
+    Raises:
+        TypeError: If input is not a string.
+
+    Examples:
+        >>> _parse_unit('meter')  # Unit.Meter
+        >>> _parse_unit('m')      # Unit.Meter  
+        >>> _parse_unit('fps')    # Unit.FPS
+        >>> _parse_unit('MOA')    # Unit.MOA
+    """
     input_ = input_.strip().lower()
     if not isinstance(input_, str):
         raise TypeError(f"type str expected for 'input_', got {type(input_)}")
@@ -943,7 +1270,30 @@ def _parse_unit(input_: str) -> Union[Unit, None, Any]:
 
 def _parse_value(input_: Union[str, Number],
                  preferred: Optional[Union[Unit, str]]) -> Optional[Union[GenericDimension[Any], Any, Unit]]:
-    """Parse the unit value and return 'AbstractUnit'"""
+    """Parse a value with optional unit specification into a unit measurement.
+
+    Args:
+        input_: Value to parse - can be a number or string with optional unit.
+        preferred: Preferred unit to use for numeric inputs, either as Unit enum or string alias.
+
+    Returns:
+        Parsed unit measurement if successful, raises exception on failure.
+
+    Raises:
+        TypeError: If input type is not supported.
+        UnitAliasError: If unit alias cannot be parsed.
+
+    Examples:
+        >>> # Parse numeric value with preferred unit
+        >>> _parse_value(100, Unit.Meter)  # Distance(100, Unit.Meter)
+        
+        >>> # Parse string with embedded unit
+        >>> _parse_value('100m', None)     # Distance(100, Unit.Meter)
+        >>> _parse_value('2800fps', None)  # Velocity(2800, Unit.FPS)
+        
+        >>> # Parse with string preferred unit
+        >>> _parse_value(50, 'grain')      # Weight(50, Unit.Grain)
+    """
 
     def create_as_preferred(value_):
         if isinstance(preferred, Unit):

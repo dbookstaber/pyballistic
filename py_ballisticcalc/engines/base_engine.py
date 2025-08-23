@@ -3,6 +3,7 @@
 """pure python trajectory calculation backend"""
 
 import math
+from typing import Sequence
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
@@ -235,18 +236,18 @@ class _WindSock:
     Currently this class assumes that requests for wind readings will only be made in order of increasing range.
     This assumption is violated if the projectile is blown or otherwise moves backwards.
     """
-    winds: tuple['Wind', ...]
+    winds: Sequence[Wind]
     current_index: int
     next_range: float
 
-    def __init__(self, winds: Union[Tuple["Wind", ...], None]):
+    def __init__(self, winds: Optional[Sequence[Wind]]):
         """
         Initializes the _WindSock class.
 
         Args:
-            winds (Union[Tuple[Wind, ...], None], optional): A tuple of Wind objects. Defaults to None.
+            winds (Optional[Sequence[Wind]], optional): A sequence of Wind objects. Defaults to None.
         """
-        self.winds: Tuple["Wind", ...] = winds or tuple()
+        self.winds: Sequence[Wind] = winds or tuple()
         self.current_index: int = 0
         self.next_range: float = Wind.MAX_DISTANCE_FEET
         self._last_vector_cache: Union["Vector", None] = None

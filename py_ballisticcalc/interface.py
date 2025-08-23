@@ -5,7 +5,7 @@ from typing import Generic, Any
 import warnings
 
 from deprecated import deprecated
-from typing_extensions import Union, List, Optional, TypeVar, Type
+from typing_extensions import Union, List, Optional, TypeVar, Type, Generator
 
 from py_ballisticcalc import RK4IntegrationEngine
 # pylint: disable=import-error,no-name-in-module
@@ -32,7 +32,7 @@ class _EngineLoader:
     _entry_point_suffix = DEFAULT_ENTRY_SUFFIX
 
     @classmethod
-    def _get_entries_by_group(cls):
+    def _get_entries_by_group(cls) -> set:
         all_entry_points = entry_points()
         if hasattr(all_entry_points, 'select'):  # for importlib >= 5
             ballistic_entry_points = all_entry_points.select(group=cls._entry_point_group)
@@ -43,7 +43,7 @@ class _EngineLoader:
         return set(ballistic_entry_points)
 
     @classmethod
-    def iter_engines(cls):
+    def iter_engines(cls) -> Generator[EntryPoint, None, None]:
         """Iterates over all available engines in the entry points."""
         ballistic_entry_points = cls._get_entries_by_group()
         for ep in ballistic_entry_points:
@@ -67,8 +67,7 @@ class _EngineLoader:
         return None
 
     @classmethod
-    def load(cls, entry_point: EngineProtocolEntry = DEFAULT_ENTRY) -> Type[
-        EngineProtocol[ConfigT]]:
+    def load(cls, entry_point: EngineProtocolEntry = DEFAULT_ENTRY) -> Type[EngineProtocol[Any]]:
         if entry_point is None:
             entry_point = DEFAULT_ENTRY
         if isinstance(entry_point, EngineProtocol):
@@ -95,9 +94,9 @@ class Calculator(Generic[ConfigT]):
 
     config: Optional[ConfigT] = field(default=None)
     engine: EngineProtocolEntry = field(default=DEFAULT_ENTRY)
-    _engine_instance: EngineProtocol[ConfigT] = field(init=False, repr=False, compare=False)
+    _engine_instance: EngineProtocol[Any] = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._engine_instance = _EngineLoader.load(self.engine)(self.config)
 
     def __getattr__(self, item: str) -> Any:
@@ -147,13 +146,17 @@ class Calculator(Generic[ConfigT]):
 
     def barrel_elevation_for_target(self, shot: Shot, target_distance: Union[float, Distance]) -> Angular:
         """Calculates barrel elevation to hit target at zero_distance.
-        :param shot: Shot instance for which calculate barrel elevation is
-        :param target_distance: Look-distance to "zero," which is point we want to hit.
-            This is the distance that a rangefinder would return with no ballistic adjustment.
-            NB: Some rangefinders offer an adjusted distance based on inclinometer measurement.
-                However, without a complete ballistic model these can only approximate the effects
-                on ballistic trajectory of shooting uphill or downhill.  Therefore:
-                For maximum accuracy, use the raw sight distance and look_angle as inputs here.
+        
+        Args:
+            shot: Shot instance for which calculate barrel elevation is
+            target_distance: Look-distance to "zero," which is point we want to hit.
+                This is the distance that a rangefinder would return with no ballistic adjustment.
+                
+        Note:
+            Some rangefinders offer an adjusted distance based on inclinometer measurement.
+            However, without a complete ballistic model these can only approximate the effects
+            on ballistic trajectory of shooting uphill or downhill. Therefore:
+            For maximum accuracy, use the raw sight distance and look_angle as inputs here.
         """
         target_distance = PreferredUnits.distance(target_distance)
         total_elevation = self._engine_instance.zero_angle(shot, target_distance)
@@ -163,8 +166,10 @@ class Calculator(Generic[ConfigT]):
 
     def set_weapon_zero(self, shot: Shot, zero_distance: Union[float, Distance]) -> Angular:
         """Sets shot.weapon.zero_elevation so that it hits a target at zero_distance.
-        :param shot: Shot instance from which we take a zero
-        :param zero_distance: Look-distance to "zero," which is point we want to hit.
+        
+        Args:
+            shot: Shot instance from which we take a zero
+            zero_distance: Look-distance to "zero," which is point we want to hit.
         """
         shot.weapon.zero_elevation = self.barrel_elevation_for_target(shot, zero_distance)
         return shot.weapon.zero_elevation
@@ -219,7 +224,7 @@ class Calculator(Generic[ConfigT]):
         return result
 
     @staticmethod
-    def iter_engines():
+    def iter_engines() -> Generator[EntryPoint, None, None]:
         """Iterates over all available engines in the entry points."""
         yield from _EngineLoader.iter_engines()
 

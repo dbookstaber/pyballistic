@@ -4,7 +4,7 @@ import typing
 import warnings
 from dataclasses import dataclass, field
 from deprecated import deprecated
-from typing_extensions import Final, List, Literal, NamedTuple, Optional, Tuple, Union
+from typing_extensions import Final, List, Literal, NamedTuple, Optional, Sequence, Tuple, Union
 
 from py_ballisticcalc.conditions import Shot, Wind
 from py_ballisticcalc.drag_model import DragDataPoint
@@ -426,7 +426,7 @@ class ShotProps:
         self.stability_coefficient = self._calc_stability_coefficient()
 
     @property
-    def winds(self) -> Tuple[Wind, ...]:
+    def winds(self) -> Sequence[Wind]:
         return self.shot.winds
     
     @property

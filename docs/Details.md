@@ -2,6 +2,11 @@
 
 This page is for contributors who want to modify algorithms, add engines, or extend the project.
 
+## CI and `uv.lock`
+Development dependencies and reproducible developer/CI installs are pinned in `uv.lock`.
+* This lockfile is for maintainers and CI reproducibility; it is not used by library consumers who install via pip/pyproject.
+* If you use `uv` for environment management, run `uv sync --dev` (optionally with `--extra exts` to install the Cython subproject) to produce the locked environment used by CI.
+
 ## Code locations & responsibilities
 - `py_ballisticcalc/` — core Python package.
   - `engines/` — Python engine implementations and `TrajectoryDataFilter`.

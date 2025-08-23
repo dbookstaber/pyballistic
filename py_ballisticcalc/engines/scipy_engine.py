@@ -15,7 +15,7 @@ TODO:
 import math
 import warnings
 from dataclasses import dataclass, asdict
-from typing import Literal, Any, Callable
+from typing import Literal, Any, Callable, Sequence
 
 import numpy as np
 from typing_extensions import Union, Tuple, List, Optional, override
@@ -104,7 +104,7 @@ def scipy_event(
 class WindSock:
     """Finds wind vector in effect at any distance down-range."""
 
-    def __init__(self, winds: Union[Tuple["Wind", ...], None]):
+    def __init__(self, winds: Optional[Sequence[Wind]]):
         # Sort winds by range, ascending
         self.winds = None
         if isinstance(winds, Wind):
