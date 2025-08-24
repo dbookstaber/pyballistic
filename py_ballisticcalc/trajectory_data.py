@@ -1,4 +1,55 @@
-"""Implements a point of trajectory class in applicable data types"""
+"""Ballistic Trajectory Data Structures and Post-Processing Classes.
+
+Core Components:
+    - TrajFlag: Ballistic points of interest
+    - TrajectoryData: Detailed ballistic state at a single trajectory point
+    - BaseTrajData: Minimal trajectory data required for a single point
+    - HitResult: Complete trajectory results with metadata
+    - ShotProps: All metadata used to compute the trajectory
+    - DangerSpace: Target engagement zone analysis
+
+Key Features:
+    - Immutable trajectory data structures for thread safety
+    - Quadratic interpolation for smooth trajectory analysis
+    - Support for multiple coordinate systems and unit conversions
+    - Integration with visualization libraries (matplotlib)
+    - Zero-crossing detection and special point identification
+    - Danger space analysis for tactical applications
+
+Typical Usage:
+    ```python
+    from py_ballisticcalc import Calculator, Shot, DragModel
+    from py_ballisticcalc.trajectory_data import TrajFlag
+    
+    # Calculate trajectory
+    calc = Calculator()
+    shot = Shot(...)
+    
+    hit_result = calc.fire(shot, trajectory_range=1000, flags=TrajFlag.ALL)
+    
+    # Access trajectory data
+    for point in hit_result.trajectory:
+        print(f"Time: {point.time:.3f}s, Distance: {point.distance}, "
+              f"Height: {point.height}, Velocity: {point.velocity}")
+    
+    # Find specific points
+    zero_data = hit_result.zeros()  # Zero crossings
+    max_range_point = hit_result.get_at('distance', Distance.Meter(1000))
+
+    # Quadratic interpolation for specific point
+    interpolated = TrajectoryData.interpolate('time', 1.5, point1, point2, point3)
+    
+    # Danger space analysis
+    danger = hit_result.danger_space(at_range=Distance.Meter(500),
+                                     target_height=Distance.Feet(2))
+    ```
+
+See Also:
+    - py_ballisticcalc.interface: Calculator class to generate HitResults
+    - py_ballisticcalc.unit: Unit system for all measurement values
+    - py_ballisticcalc.vector: Vector mathematics for position/velocity
+"""
+
 import math
 import typing
 import warnings
@@ -32,30 +83,57 @@ __all__ = (
     'get_correction',
     'calculate_curve',
 )
-
-_TrajFlagNames = {
-    0: 'NONE',
-    1: 'ZERO_UP',
-    2: 'ZERO_DOWN',
-    3: 'ZERO',
-    4: 'MACH',
-    8: 'RANGE',
-    16: 'APEX',
-    31: 'ALL',
-    32: 'MRT',  # Proposed: Mid-Range Trajectory (a.k.a. Maximum Ordinate) = largest slant-height
-}
-
-def lagrange_quadratic(x, x0, y0, x1, y1, x2, y2) -> float:
-    """Quadratic interpolation for y at x, given three points. (Does not depend on order of points.)"""
-    L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
-    L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
-    L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
-    return y0 * L0 + y1 * L1 + y2 * L2
-
+ 
 
 class TrajFlag(int):
-    """Flags for marking trajectory row if Zero or Mach crossing.
-    Also used to set filters for a trajectory calculation loop.
+    """Trajectory point classification flags for marking special trajectory events.
+    
+    Provides enumeration values for identifying and filtering special points in
+    ballistic trajectories. The flags can be combined using bitwise operations.
+    
+    Flag Values:
+        NONE (0): Standard trajectory point with no special events
+        ZERO_UP (1): Upward zero crossing (trajectory rising through sight line)
+        ZERO_DOWN (2): Downward zero crossing (trajectory falling through sight line)
+        ZERO (3): Any zero crossing (ZERO_UP | ZERO_DOWN)
+        MACH (4): Mach 1 transition point (sound barrier crossing)
+        RANGE (8): User requested point, typically by distance or time step
+        APEX (16): Trajectory apex (maximum height point)
+        ALL (31): All special points (combination of all above flags)
+        MRT (32): Mid-Range Trajectory/Maximum Ordinate (largest slant height) [PROPOSED]
+        
+    Examples:
+        Basic flag usage:
+        
+        ```python
+        from py_ballisticcalc.trajectory_data import TrajFlag
+        
+        # Filter for zero crossings only
+        flags = TrajFlag.ZERO
+        
+        # Filter for multiple event types
+        flags = TrajFlag.ZERO | TrajFlag.APEX | TrajFlag.MACH
+        
+        # Filter for all special points
+        flags = TrajFlag.ALL
+        
+        # Check if a trajectory point has specific flags
+        if point.flag & TrajFlag.APEX:
+            print("Trajectory apex")
+        ```
+        
+        Trajectory calculation with flags:
+        
+        ```python
+        # Calculate trajectory with zero crossings and apex
+        hit_result = calc.fire(shot, 1000, filter_flags=TrajFlag.ZERO | TrajFlag.APEX)
+        
+        # Find all zero crossing points
+        zeros = [p for p in hit_result.trajectory if p.flag & TrajFlag.ZERO]
+        
+        # Find apex point
+        apex = next((p for p in hit_result.trajectory if p.flag & TrajFlag.APEX), None)
+        ```
     """
     NONE: Final[int] = 0
     ZERO_UP: Final[int] = 1
@@ -67,32 +145,151 @@ class TrajFlag(int):
     ALL: Final[int] = RANGE | ZERO_UP | ZERO_DOWN | MACH | APEX
     MRT: Final[int] = 32
 
+    @classmethod
+    def _value_to_name(cls) -> dict[int, str]:
+        return {
+            v: k
+            for k, v in vars(cls).items()
+            if k.isupper() and isinstance(v, int)
+        }
+
     @staticmethod
     def name(value: Union[int, 'TrajFlag']) -> str:
-        """Return a concatenated name representation of the given flag value."""
-        if value in _TrajFlagNames:
-            return _TrajFlagNames[value]
-
-        parts = [name for bit, name in _TrajFlagNames.items() if bit and (value & bit) == bit]
+        """Get the human-readable name for a trajectory flag value.
+        
+        Converts a numeric flag value to its corresponding string name for
+        display, logging, or debugging purposes. Supports both individual
+        flags and combined flag values with intelligent formatting.
+        
+        Args:
+            value: The TrajFlag enum value or integer flag to convert.
+            
+        Returns:
+            String name of the flag. For combined flags, returns names joined
+            with "|". For unknown flags, returns "UNKNOWN". Special handling
+            for ZERO flag combinations.
+            
+        Examples:
+            ```python
+            # Individual flag names
+            print(TrajFlag.name(TrajFlag.ZERO))      # "ZERO"
+            print(TrajFlag.name(TrajFlag.APEX))      # "APEX"
+            
+            # Combined flags
+            combined = TrajFlag.ZERO | TrajFlag.APEX
+            print(TrajFlag.name(combined))           # "ZERO|APEX"
+            
+            # Unknown flags
+            print(TrajFlag.name(999))                # "UNKNOWN"
+            ```
+        """
+        v = int(value)
+        mapping = TrajFlag._value_to_name()
+        if v in mapping:
+            return mapping[v]
+        parts = [mapping[bit] for bit in sorted(mapping) if bit and (v & bit) == bit]
         if "ZERO_UP" in parts and "ZERO_DOWN" in parts:
             parts.remove("ZERO_UP")
             parts.remove("ZERO_DOWN")
         return "|".join(parts) if parts else "UNKNOWN"
 
 
+def lagrange_quadratic(x, x0, y0, x1, y1, x2, y2) -> float:
+    """Perform quadratic Lagrange interpolation for a given x value.
+    
+    Computes the interpolated y value at position x using three known points
+    (x0,y0), (x1,y1), (x2,y2) with Lagrange quadratic interpolation.
+    
+    Args:
+        x: The x-coordinate where interpolation is desired.
+        x0, y0: First known point values.
+        x1, y1: Second known point values.
+        x2, y2: Third known point values.
+
+    Returns:
+        The interpolated y-value at x.
+        
+    Raises:
+        ZeroDivisionError: If any two x-coordinates are identical.
+            
+    Examples:
+        ```python
+        # Interpolate trajectory height given three known trajectory points:
+        x0, y0 = 400.0, 2.5   # 400m: 2.5m height
+        x1, y1 = 500.0, 2.0   # 500m: 2.0m height  
+        x2, y2 = 600.0, 1.2   # 600m: 1.2m height
+        
+        # Interpolate height at 550m
+        height_at_550 = lagrange_quadratic(550.0, x0, y0, x1, y1, x2, y2)
+        
+        # Time-based interpolation
+        t0, v0 = 1.0, 800.0  # 1.0s: 800 m/s
+        t1, v1 = 1.5, 790.0  # 1.5s: 790 m/s
+        t2, v2 = 2.0, 780.0  # 2.0s: 780 m/s
+        velocity_at_1_75 = lagrange_quadratic(1.75, t0, v0, t1, v1, t2, v2)
+        ```
+        
+    Note:
+        The interpolation is order-independent: any permutation of the three
+        points will yield the same result. The method works best when the
+        target x value lies within or near the range of the input points.
+    """
+    L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
+    L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
+    L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
+    return y0 * L0 + y1 * L1 + y2 * L2
+
+
 class CurvePoint(NamedTuple):
-    """Coefficients for quadratic interpolation"""
+    """Coefficients for quadratic curve fitting.
+    
+    Attributes:
+        a: Quadratic coefficient (x² term) in the equation y = ax² + bx + c.
+        b: Linear coefficient (x term) in the equation y = ax² + bx + c.
+        c: Constant coefficient (constant term) in the equation y = ax² + bx + c.
+    """
     a: float
     b: float
     c: float
 
 
 class BaseTrajData(NamedTuple):
-    """Minimal data for one point in ballistic trajectory"""
+    """Minimal ballistic trajectory point data.
+    
+    Represents the minimum state information for a single point in a ballistic trajectory.
+    The data are kept in basic units (seconds, feet) to avoid unit tracking and conversion overhead.
+
+    Attributes:
+        time: Time since projectile launch in seconds.
+        position: 3D position vector in feet (x=downrange, y=height, z=windage).
+        velocity: 3D velocity vector in feet per second.
+        mach: Local speed of sound in feet per second.
+
+    Examples:
+        ```python
+        from py_ballisticcalc.vector import Vector
+        
+        # Create trajectory point at launch
+        launch_pt = BaseTrajData(
+            time=0.0,
+            position=Vector(0.0, -0.1, 0.0),   # 0.1 ft scope height
+            velocity=Vector(2640.0, 0.0, 0.0), # 800 m/s ≈ 2640 fps
+            mach=1115.5                        # Standard conditions
+        )
+        
+        # Interpolate between points
+        interpolated = BaseTrajData.interpolate('time', 1.25, launch_pt, mid_pt, end_pt)
+        ```
+        
+    Note:
+        This class is designed for efficiency in calculation engines that may compute
+        thousands of points over a trajectory. For detailed data with units and derived quantities,
+        use TrajectoryData which can be constructed from BaseTrajData using from_base_data().
+    """
     time: float  # Units: seconds
     position: Vector  # Units: feet
     velocity: Vector  # Units: fps
-    mach: float
+    mach: float  # Units: fps
 
     @staticmethod
     def interpolate(key_attribute: str, key_value: float,
@@ -383,8 +580,8 @@ class TrajectoryData(NamedTuple):
                 interpolated_fields[field_name] = type(y0_val).new_from_raw(interpolated_raw, y0_val.units)
             elif isinstance(y0_val, (float, int)):
                 interpolated_fields[field_name] = lagrange_quadratic(x_val, x0, float(y0_val),
-                                                                             x1, float(y1_val),
-                                                                             x2, float(y2_val)
+                                                                            x1, float(y1_val),
+                                                                            x2, float(y2_val)
                 )
             else:
                 raise TypeError(f"Cannot interpolate field '{field_name}' of type {type(y0_val)}")
@@ -395,11 +592,82 @@ class TrajectoryData(NamedTuple):
 
 @dataclass
 class ShotProps:
-    """
-    Properties for a Shot used in trajectory calculations, converted to internal units.
+    """Shot configuration and parameters for ballistic trajectory calculations.
+    
+    Contains all shot-specific data converted to internal units for high-performance
+    ballistic calculations. This class serves as the computational interface between
+    user-friendly Shot objects and the numerical integration engines.
+    
+    The class pre-computes expensive calculations (ballistic coefficient curves,
+    atmospheric data, projectile properties) and stores them in optimized formats
+    for repeated use during trajectory integration. All values are converted to
+    internal units (feet, seconds, grains) for computational efficiency.
+    
+    Attributes:
+        shot: Original Shot object containing user input parameters.
+        bc: Ballistic coefficient for drag calculations.
+        curve: Pre-computed quadratic interpolation curves for drag coefficient lookup.
+        mach_list: Mach number list corresponding to drag table data points.
+        look_angle_rad: Line of sight angle from horizontal in radians (positive = upward).
+        twist_inch: Barrel rifling twist rate in inches per rotation.
+        length_inch: Projectile length in inches (for stability and drift calculations).
+        diameter_inch: Projectile diameter in inches (for stability and drift calculations).
+        weight_grains: Projectile weight in grains (for energy, stability, and drift calculations).
+        barrel_elevation_rad: Barrel elevation angle from horizontal in radians.
+        barrel_azimuth_rad: Barrel azimuth angle from reference direction in radians.
+        sight_height_ft: Height of sight above bore centerline in feet.
+        cant_cosine: Cosine of weapon cant angle for vector decomposition.
+        cant_sine: Sine of weapon cant angle for vector decomposition.
+        alt0_ft: Initial altitude above sea level in feet for atmospheric calculations.
+        muzzle_velocity_fps: Projectile muzzle velocity in feet per second.
+        stability_coefficient: Miller stability coefficient (computed post-init).
+        calc_step: Integration step size for numerical calculations (computed post-init).
+        filter_flags: Trajectory flags for filtering special points (computed post-init).
+        
+    Examples:
+        Create ShotProps from Shot object:
+        
+        ```python
+        from py_ballisticcalc import Shot, ShotProps
+        
+        # Create shot configuration
+        shot = Shot(weapon=weapon, ammo=ammo, atmo=atmo)
 
-    TODO: The Shot member object should either be a copy or immutable so that subsequent changes to its properties
-            do not invalidate the calculations and data associated with this ShotProps instance.
+        # Convert to ShotProps
+        shot_props = ShotProps.from_shot(shot)
+        
+        # Access pre-computed values
+        print(f"Stability coefficient: {shot_props.stability_coefficient}")
+
+        # Get drag coefficient at specific Mach number
+        drag = shot_props.drag_by_mach(1.5)
+        
+        # Calculate spin drift at flight time
+        time = 1.2  # seconds
+        drift = shot_props.spin_drift(time)  # inches
+        
+        # Get atmospheric conditions at altitude
+        drop = 100  # feet above initial altitude
+        density_ratio, mach_fps = shot_props.get_density_and_mach_for_altitude(drop)
+        ```
+        
+    Computational Optimizations:
+        - Drag coefficient curves pre-computed for fast interpolation
+        - Trigonometric values (cant_cosine, cant_sine) pre-calculated
+        - Atmospheric parameters cached for repeated altitude lookups
+        - Miller stability coefficient computed once during initialization
+        
+    Note:
+        This class is designed for internal use by ballistic calculation engines.
+        User code should typically work with Shot objects and let the Calculator
+        handle the conversion to ShotProps automatically.
+        
+        The original Shot object is retained for reference, but modifications
+        to it after ShotProps creation will not affect the stored calculations.
+        Create a new ShotProps instance if Shot parameters change.
+
+    TODO: The Shot member object should either be a copy or immutable so that subsequent changes to its
+          properties do not invalidate the calculations and data associated with this ShotProps instance.
     """
     shot: Shot
     bc: float  # Ballistic coefficient
@@ -456,8 +724,7 @@ class ShotProps:
         )
     
     def drag_by_mach(self, mach: float) -> float:
-        """
-        Calculates a standard drag factor (SDF) for the given Mach number.  Where:
+        """Calculates a standard drag factor (SDF) for the given Mach number:
             Drag force = V^2 * AirDensity * C_d * S / 2m
                        = V^2 * density_ratio * SDF
         Where:
@@ -466,7 +733,6 @@ class ShotProps:
             - S is cross-section = d^2 pi/4, where d is bullet diameter in inches
             - m is bullet mass in pounds
             - bc contains m/d^2 in units lb/in^2, which is multiplied by 144 to convert to lb/ft^2
-
         Thus:
             - The magic constant found here = StandardDensity * pi / (4 * 2 * 144)
 
@@ -482,8 +748,7 @@ class ShotProps:
         return cd * 2.08551e-04 / self.bc
 
     def spin_drift(self, time) -> float:
-        """
-        Litz spin-drift approximation
+        """Litz spin-drift approximation
 
         Args:
             time: Time of flight
@@ -498,8 +763,7 @@ class ShotProps:
         return 0
 
     def _calc_stability_coefficient(self) -> float:
-        """
-        Calculates the Miller stability coefficient.
+        """Calculates the Miller stability coefficient.
 
         Returns:
             float: The Miller stability coefficient.
@@ -523,14 +787,14 @@ class ShotProps:
     def get_density_and_mach_for_altitude(self, drop: float):
         return self.shot.atmo.get_density_and_mach_for_altitude(self.alt0_ft + drop)
 
+
 # pylint: disable=too-many-positional-arguments
 @deprecated(reason="Use TrajectoryData.from_props instead.")
 def create_trajectory_row(time: float, range_vector: Vector, velocity_vector: Vector,
                           velocity: float, mach: float, spin_drift: float, look_angle: float,
                           density_ratio: float, drag: float, weight: float,
                           flag: Union[TrajFlag, int]) -> TrajectoryData:
-    """
-    Creates a TrajectoryData object representing a single row of trajectory data.
+    """Creates a TrajectoryData object representing a single row of trajectory data.
 
     Args:
         time (float): Time of flight in seconds.
@@ -653,18 +917,14 @@ def calculate_ogw(bullet_weight: float, velocity: float) -> float:
 
 def calculate_curve(data_points: List[DragDataPoint]) -> List[CurvePoint]:
     """Piecewise quadratic interpolation of drag curve
+
     Args:
         data_points: List[{Mach, CD}] data_points in ascending Mach order
+
     Returns:
         List[CurvePoints] to interpolate drag coefficient
     """
-    # rate, x1, x2, x3, y1, y2, y3, a, b, c
-    # curve = []
-    # curve_point
-    # num_points, len_data_points, len_data_range
-
-    rate = (data_points[1].CD - data_points[0].CD
-            ) / (data_points[1].Mach - data_points[0].Mach)
+    rate = (data_points[1].CD - data_points[0].CD) / (data_points[1].Mach - data_points[0].Mach)
     curve = [CurvePoint(0, rate, data_points[0].CD - data_points[0].Mach * rate)]
     len_data_points = int(len(data_points))
     len_data_range = len_data_points - 1
@@ -694,8 +954,7 @@ def calculate_curve(data_points: List[DragDataPoint]) -> List[CurvePoint]:
 
 
 def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
-    """
-    Extracts Mach values from a list of DragDataPoint objects.
+    """Extracts Mach values from a list of DragDataPoint objects.
 
     Args:
         data (List[DragDataPoint]): A list of DragDataPoint objects.
@@ -734,8 +993,7 @@ def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
 
 
 def _calculate_by_curve_and_mach_list(mach_list: List[float], curve: List[CurvePoint], mach: float) -> float:
-    """
-    Calculates a value based on a piecewise quadratic curve and a list of Mach values.
+    """Calculates a value based on a piecewise quadratic curve and a list of Mach values.
 
     This function performs a binary search on the `mach_list` to find the segment
     of the `curve` relevant to the input `mach` number and then interpolates
@@ -795,7 +1053,7 @@ class DangerSpace(NamedTuple):
                if self.look_angle != 0 else '')
 
     # pylint: disable=import-outside-toplevel
-    def overlay(self, ax: 'Axes', label: Optional[str] = None):  # type: ignore
+    def overlay(self, ax: 'Axes', label: Optional[str] = None) -> None:
         """Highlights danger-space region on plot.
 
         Args:
@@ -1065,7 +1323,6 @@ class HitResult:
             DangerSpace: The calculated danger space.
 
         Raises:
-            AttributeError: If extra_data wasn't requested.
             ArithmeticError: If trajectory doesn't reach requested distance.
         """
         target_at_range = PreferredUnits.distance(at_range)
@@ -1091,7 +1348,7 @@ class HitResult:
                            end_row,
                            self.props.look_angle)
 
-    def dataframe(self, formatted: bool = False) -> 'DataFrame':  # type: ignore
+    def dataframe(self, formatted: bool = False) -> 'DataFrame':
         """
         Returns the trajectory table as a DataFrame.
 
@@ -1112,7 +1369,7 @@ class HitResult:
                 "Use `pip install py_ballisticcalc[charts]` to get trajectory as pandas.DataFrame"
             ) from err
 
-    def plot(self, look_angle: Optional[Angular] = None) -> 'Axes':  # type: ignore
+    def plot(self, look_angle: Optional[Angular] = None) -> 'Axes':
         """
         Returns a graph of the trajectory.
 

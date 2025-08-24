@@ -1117,7 +1117,7 @@ class PreferredUnits(metaclass=PreferredUnitsMeta):  # pylint: disable=too-many-
         >>> PreferredUnits.velocity = Unit.MPS
         
         >>> # Reset to defaults
-        >>> PreferredUnits.defaults()
+        >>> PreferredUnits.restore_defaults()
         
         >>> # Bulk configuration
         >>> PreferredUnits.set(
@@ -1148,14 +1148,14 @@ class PreferredUnits(metaclass=PreferredUnitsMeta):  # pylint: disable=too-many-
     time: Unit = Unit.Second
 
     @classmethod
-    def defaults(cls):
+    def restore_defaults(cls):
         """Reset all preferred units to their default values.
 
         Examples:
             >>> # Changing default distance units:
             >>> PreferredUnits.distance = Unit.Meter
             >>> # Reset to defaults
-            >>> PreferredUnits.defaults()
+            >>> PreferredUnits.restore_defaults()
             >>> PreferredUnits.distance
             yard
         """

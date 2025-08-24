@@ -1,6 +1,43 @@
 # pylint: disable=missing-class-docstring,missing-function-docstring,too-many-lines
 # pylint: disable=line-too-long,invalid-name,attribute-defined-outside-init
-"""pure python trajectory calculation backend"""
+"""Base integration engine for ballistic trajectory calculations.
+
+The module serves as the core framework for the engine system, providing:
+- Engine configuration management through BaseEngineConfig and BaseEngineConfigDict
+- Abstract base class BaseIntegrationEngine implementing the EngineProtocol
+- Trajectory data filtering and processing utilities
+
+Classes:
+    BaseEngineConfig: Dataclass configuration for engine parameters
+    BaseEngineConfigDict: TypedDict version for flexible configuration
+    BaseIntegrationEngine: Abstract base class for integration engines
+    TrajectoryDataFilter: Utility for filtering and processing trajectory data
+    _WindSock: Internal wind modeling utility
+    _ZeroCalcStatus: Enumeration for zero-finding calculation status
+
+Configuration Constants:
+    cZeroFindingAccuracy: Maximum allowed error for zero-finding (feet)
+    cMaxIterations: Maximum iterations for zero-finding algorithms
+    cMinimumVelocity: Minimum velocity to continue trajectory calculation (fps)
+    cGravityConstant: Gravitational acceleration constant (ft/s²)
+
+Architecture:
+    This module follows the strategy pattern, where BaseIntegrationEngine
+    provides the common interface and algorithms, while concrete subclasses
+    implement specific numerical integration methods (Euler, RK4, Verlet, etc.).
+    
+    The configuration system supports both dataclass and TypedDict formats
+    for maximum flexibility in different usage contexts.
+
+See Also:
+    py_ballisticcalc.generics.engine.EngineProtocol: Protocol interface
+    py_ballisticcalc.engines: Concrete engine implementations
+    py_ballisticcalc.trajectory_data: Data structures for results
+
+Note:
+    All engines inherit from BaseIntegrationEngine and must implement the
+    abstract _integrate method for their specific numerical integration approach.
+"""
 
 import math
 from typing import Sequence
@@ -44,6 +81,46 @@ cStepMultiplier: float = 1.0  # Multiplier for engine's default step, for changi
 
 @dataclass
 class BaseEngineConfig:
+    """Configuration dataclass for ballistic calculation engines.
+    
+    All parameters use imperial units (feet, fps) for internal calculations,
+    ensuring consistency across the engine system.
+    
+    Attributes:
+        cZeroFindingAccuracy: Maximum allowed slant-error (in feet) for zero-finding.
+                             Smaller values increase precision but may slow calculations.
+                             Defaults to 0.000005 feet.
+        cMaxIterations: Maximum iterations for iterative algorithms (zero-finding, etc.).
+                       Prevents infinite loops in convergence algorithms.
+                       Defaults to 40 iterations.
+        cMinimumAltitude: Minimum altitude in feet below sea level to continue calculation.
+                         Trajectory stops if projectile goes below this altitude.
+                         Defaults to -1500 feet.
+        cMaximumDrop: Maximum drop in feet from muzzle to continue calculation.
+                     Trajectory stops if drop exceeds this value (negative number).
+                     Defaults to -10000 feet.
+        cMinimumVelocity: Minimum velocity in fps to continue calculation.
+                         Trajectory stops when velocity falls below this threshold.
+                         Defaults to 50.0 fps.
+        cGravityConstant: Gravitational acceleration in ft/s².
+                         Standard Earth gravity for ballistic calculations.
+                         Defaults to -32.17405 ft/s².
+        cStepMultiplier: Multiplier for engine's default integration step size.
+                        Values < 1.0 increase precision but slow calculation.
+                        Values > 1.0 decrease precision but speed calculation.
+                        Defaults to 1.0.
+    
+    Example:
+        >>> config = BaseEngineConfig(
+        ...     cMinimumVelocity=100.0,
+        ...     cStepMultiplier=0.5  # Higher precision
+        ... )
+        >>> engine = RK4IntegrationEngine(config)
+        
+    Note:
+        This dataclass is primarily used internally. For flexible configuration
+        from dictionaries, use BaseEngineConfigDict with create_base_engine_config().
+    """
     cZeroFindingAccuracy: float = cZeroFindingAccuracy
     cMaxIterations: int = cMaxIterations
     cMinimumAltitude: float = cMinimumAltitude
@@ -53,10 +130,50 @@ class BaseEngineConfig:
     cStepMultiplier: float = cStepMultiplier
 
 
+#: Default configuration instance using standard ballistic calculation parameters
 DEFAULT_BASE_ENGINE_CONFIG: BaseEngineConfig = BaseEngineConfig()
 
 
 class BaseEngineConfigDict(TypedDict, total=False):
+    """TypedDict for flexible engine configuration from dictionaries.
+    
+    This TypedDict provides a flexible way to configure ballistic calculation
+    engines using dictionary syntax. All fields are optional, allowing partial
+    configuration where only specific parameters need to be overridden.
+    
+    When used with create_base_engine_config(), any unspecified fields will
+    use their default values from DEFAULT_BASE_ENGINE_CONFIG.
+    
+    Type Parameters:
+        All fields are Optional to support partial configuration.
+        
+    Fields:
+        cZeroFindingAccuracy: Maximum slant-error in feet for zero-finding precision.
+        cMaxIterations: Maximum iterations for convergence algorithms.
+        cMinimumAltitude: Minimum altitude in feet to continue calculation.
+        cMaximumDrop: Maximum drop in feet from muzzle to continue.
+        cMinimumVelocity: Minimum velocity in fps to continue calculation.
+        cGravityConstant: Gravitational acceleration in ft/s².
+        cStepMultiplier: Integration step size multiplier.
+    
+    Example:
+        >>> config_dict: BaseEngineConfigDict = {
+        ...     'cMinimumVelocity': 100.0,
+        ...     'cStepMultiplier': 0.8
+        ... }
+        >>> config = create_base_engine_config(config_dict)
+        >>> # Using with Calculator
+        >>> from py_ballisticcalc import Calculator
+        >>> calc = Calculator(config=config_dict)
+        
+    See Also:
+        BaseEngineConfig: Type-safe dataclass version
+        create_base_engine_config: Factory function for BaseEngineConfig creation
+        
+    Note:
+        This TypedDict uses total=False to make all fields optional, enabling
+        flexible partial configuration while maintaining type safety.
+    """
     cZeroFindingAccuracy: Optional[float]
     cMaxIterations: Optional[int]
     cMinimumAltitude: Optional[float]
@@ -67,6 +184,34 @@ class BaseEngineConfigDict(TypedDict, total=False):
 
 
 def create_base_engine_config(interface_config: Optional[BaseEngineConfigDict] = None) -> BaseEngineConfig:
+    """Create BaseEngineConfig from optional dictionary configuration.
+    
+    This factory function creates a BaseEngineConfig instance by merging
+    default configuration values with user-provided overrides. It provides
+    a convenient way to create engine configurations from dictionary data
+    while ensuring all parameters have valid defaults.
+    
+    Args:
+        interface_config: Optional dictionary containing configuration overrides.
+                         If None, returns the default configuration.
+                         Only specified fields will override defaults.
+                         
+    Returns:
+        BaseEngineConfig instance with merged configuration values.
+        
+    Raises:
+        TypeError: If interface_config is not None and not a dictionary.
+        
+    Example:
+        >>> # Using default configuration
+        >>> config = create_base_engine_config()
+        
+        >>> # Overriding specific parameters
+        >>> custom_config = create_base_engine_config({
+        ...     'cMinimumVelocity': 75.0,
+        ...     'cStepMultiplier': 0.5
+        ... })
+    """
     config = asdict(DEFAULT_BASE_ENGINE_CONFIG)
     if interface_config is not None and isinstance(interface_config, dict):
         config.update(interface_config)
@@ -77,7 +222,7 @@ class TrajectoryDataFilter:
     """
     Determines when to record TrajectoryData rows based on TrajFlags and attribute steps.
     Interpolates for requested points.
-    Assumes that .record will be called sequentially across the trajectory.
+    Assumes that .record() will be called sequentially in time across the trajectory.
     """
     EPSILON = 1e-6  # Range difference (in feet) significant enough to justify interpolation for data
     records: List[TrajectoryData] = []
@@ -151,7 +296,7 @@ class TrajectoryDataFilter:
                 while self.next_record_distance + self.range_step <= new_data.position.x:
                     new_row = None
                     record_distance = self.next_record_distance + self.range_step
-                    if record_distance > self.range_limit:
+                    if record_distance > self.range_limit + self.EPSILON:
                         self.range_step = -1  # Don't calculate range steps past range_limit
                         break
                     if abs(record_distance - new_data.position.x) < self.EPSILON:
@@ -648,6 +793,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
 
         # 4. Ridder's method implementation.  Absent bugs, this method is guaranteed to converge in
         #    log₂(range / accuracy) = log₂(π/2 / cZeroFindingAccuracy) iterations.
+        # TODO: Consider replacing with ITP method
         for _ in range(self._config.cMaxIterations):
             mid_angle = (low_angle + high_angle) / 2.0
             f_mid = error_at_distance(mid_angle)
@@ -867,4 +1013,4 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Returns:
             HitResult: Object describing the trajectory.
         """
-        raise NotImplementedError
+        ...
