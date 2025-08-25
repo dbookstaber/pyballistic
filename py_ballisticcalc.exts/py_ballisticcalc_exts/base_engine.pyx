@@ -2,10 +2,9 @@
 CythonizedBaseIntegrationEngine
 
 Presently ._integrate() returns dense data in a CBaseTrajSeq, then .integrate()
-    feeds it through the Python TrajectoryDataFilter.
-TODO: Implement a Cython TrajectoryDataFilter.
+    feeds it through the Python TrajectoryDataFilter to build List[TrajectoryData].
+TODO: Implement a Cython TrajectoryDataFilter for increased speed?
 """
-# noinspection PyUnresolvedReferences
 # (Avoid importing cpython.exc; raise Python exceptions directly in cdef functions where needed)
 # noinspection PyUnresolvedReferences
 from libc.stdlib cimport malloc, free
@@ -131,7 +130,7 @@ cdef class CythonizedBaseIntegrationEngine:
             self._free_trajectory()
             raise
 
-    def find_apex(self, object shot_info):
+    def find_apex(self, object shot_info) -> TrajectoryData:
         """
         Finds the apex of the trajectory, where apex is defined as the point
         where the vertical component of velocity goes from positive to negative.
@@ -141,8 +140,9 @@ cdef class CythonizedBaseIntegrationEngine:
         shot_props_ptr = self._init_trajectory(shot_info)
         try:
             result = self._find_apex(shot_props_ptr)
+            props = ShotProps.from_shot(shot_info)
             self._free_trajectory()
-            return result
+            return TrajectoryData.from_props(props, result.time, result.position, result.velocity, result.mach)
         except:
             self._free_trajectory()
             raise
@@ -206,7 +206,7 @@ cdef class CythonizedBaseIntegrationEngine:
         range_step_ft = dist_step._feet if dist_step is not None else range_limit_ft
         shot_props_ptr = self._init_trajectory(shot_info)
         try:
-            object = self._integrate(shot_props_ptr, range_limit_ft, range_step_ft, time_step, filter_flags)
+            _res = self._integrate(shot_props_ptr, range_limit_ft, range_step_ft, time_step, filter_flags)
         finally:
             # Always release C resources
             self._free_trajectory()
@@ -215,8 +215,8 @@ cdef class CythonizedBaseIntegrationEngine:
         props.calc_step = self.get_calc_step()  # Add missing calc_step attribute
         
         # Extract trajectory and step_data from the result
-        trajectory = object[0]
-        error = object[1]
+        trajectory = _res[0]
+        error = _res[1]
         init = trajectory[0]
         tdf = TrajectoryDataFilter(props, filter_flags, init.position_vector, init.velocity_vector,
                                     props.barrel_elevation_rad, props.look_angle_rad,
@@ -240,15 +240,14 @@ cdef class CythonizedBaseIntegrationEngine:
                                           double target_y_ft):
         """Target miss (feet) for given launch angle using CBaseTrajSeq.
         Attempts to avoid Python exceptions in the hot path by pre-checking reach."""
-        cdef CBaseTrajSeq trajectory
-        cdef BaseTrajDataT hit
-        cdef BaseTrajC* last_ptr
-        cdef Py_ssize_t n
-        cdef double t_height_ft
-        cdef double t_distance_ft
+        cdef:
+            CBaseTrajSeq trajectory
+            BaseTrajDataT hit
+            BaseTrajC* last_ptr
+            Py_ssize_t n
         shot_props_ptr[0].barrel_elevation = angle_rad
-        result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
-        trajectory = <CBaseTrajSeq>result[0]
+        __res = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+        trajectory = <CBaseTrajSeq>__res[0]
         # If trajectory is too short for quadratic interpolation, treat as unreachable
         n = <Py_ssize_t>len(trajectory)
         if n < <Py_ssize_t>3:
@@ -511,8 +510,7 @@ cdef class CythonizedBaseIntegrationEngine:
             double high_angle_deg = <double>angle_bracket_deg[1]
             double max_range_ft
             double angle_at_max_rad
-            object max_range_distance, angle_result
-            object _apex_obj
+            BaseTrajDataT _apex_obj
             double _sdist
             
         # Virtually vertical shot
@@ -569,8 +567,8 @@ cdef class CythonizedBaseIntegrationEngine:
             # Update shot data
             shot_props_ptr[0].barrel_elevation = angle_rad
             try:
-                result = self._integrate(shot_props_ptr, <double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE)
-                trajectory = <CBaseTrajSeq>result[0]
+                _res = self._integrate(shot_props_ptr, <double>(9e9), <double>(9e9), <double>(0.0), <int>TrajFlag_t.NONE)
+                trajectory = <CBaseTrajSeq>_res[0]
                 ca = cos(shot_props_ptr[0].look_angle)
                 sa = sin(shot_props_ptr[0].look_angle)
                 n = <Py_ssize_t>len(trajectory)
@@ -640,8 +638,8 @@ cdef class CythonizedBaseIntegrationEngine:
         cdef:
             double restore_min_velocity = <double>0.0
             int has_restore_min_velocity = 0
-            object result
             BaseTrajDataT apex
+            tuple _res
 
         if self._config_s.cMinimumVelocity > <double>0.0:
             restore_min_velocity = self._config_s.cMinimumVelocity
@@ -649,8 +647,8 @@ cdef class CythonizedBaseIntegrationEngine:
             has_restore_min_velocity = 1
         
         try:
-            result = self._integrate(shot_props_ptr, <double>9e9, <double>9e9, <double>0.0, <int>TrajFlag_t.APEX)
-            apex = result[0].get_at('velocity.y', 0.0)
+            _res = self._integrate(shot_props_ptr, <double>9e9, <double>9e9, <double>0.0, <int>TrajFlag_t.APEX)
+            apex = (<CBaseTrajSeq>_res[0]).get_at('velocity.y', 0.0)
         finally:
             if has_restore_min_velocity:
                 self._config_s.cMinimumVelocity = restore_min_velocity
@@ -708,7 +706,6 @@ cdef class CythonizedBaseIntegrationEngine:
             int has_restore_cMaximumDrop = 0
             int has_restore_cMinimumAltitude = 0
 
-            object h  # For _integrate() return object
             double current_distance, height_diff_ft, look_dist_ft, range_diff_ft
             double trajectory_angle, sensitivity, denominator, correction, applied_correction
             double ca, sa
@@ -727,8 +724,8 @@ cdef class CythonizedBaseIntegrationEngine:
 
             while iterations_count < _cMaxIterations:
                 # Check height of trajectory at the zero distance (using current barrel_elevation)
-                h = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
-                hit = h[0].get_at('position.x', <double>target_x_ft)
+                _res = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+                hit = (<CBaseTrajSeq>_res[0]).get_at('position.x', <double>target_x_ft)
 
                 if hit.time == 0.0:
                     # Integrator returned initial point - consider removing constraints
@@ -805,9 +802,9 @@ cdef class CythonizedBaseIntegrationEngine:
         return _new_rad(<double>shot_props_ptr[0].barrel_elevation)
 
 
-    cdef object _integrate(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr,
-                           double range_limit_ft, double range_step_ft,
-                           double time_step, int filter_flags):
+    cdef tuple _integrate(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr,
+                          double range_limit_ft, double range_step_ft,
+                          double time_step, int filter_flags):
         raise NotImplementedError
 
 

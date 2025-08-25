@@ -11,7 +11,7 @@ and convert to these types as needed for interpolation or presentation.
 """
 # noinspection PyUnresolvedReferences
 from cython cimport final
-from py_ballisticcalc_exts.v3d cimport V3dT, set, mag
+from py_ballisticcalc_exts.v3d cimport V3dT, set
 from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 
 from py_ballisticcalc.trajectory_data import TrajFlag as PyTrajFlag
@@ -210,30 +210,6 @@ cdef class TrajectoryDataT:
         self.energy = energy
         self.ogw = ogw
         self.flag = flag
-    
-    @staticmethod
-    def from_base_data(object props, BaseTrajDataT data, int flag=TrajFlag_t.NONE):
-        """Create a TrajectoryData instance from a BaseTrajData object."""
-        cdef double velocity_mag = mag(&data._velocity)
-        
-        return TrajectoryDataT(
-            time=data.time,
-            distance=_new_feet(data._position.x),
-            velocity=_new_fps(velocity_mag),
-            mach=velocity_mag / data.mach if data.mach != 0 else 0.0,
-            height=_new_feet(data._position.y),
-            slant_height=_new_feet(data._position.y),  # Simplified: In the original it uses look_angle
-            drop_adj=_new_rad(<double>0.0),  # Simplified: Requires getCorrection function
-            windage=_new_feet(data._position.z),
-            windage_adj=_new_rad(<double>0.0),  # Simplified: Requires getCorrection function
-            slant_distance=_new_feet(data._position.x),  # Simplified: In the original it uses look_angle
-            angle=_new_rad(<double>0.0),  # Simplified: In the original it calculates trajectory_angle
-            density_ratio=<double>0.0,
-            drag=<double>0.0,
-            energy=_new_ft_lb(<double>0.0),  # Simplified: Requires calculateEnergy function
-            ogw=_new_lb(<double>0.0),  # Simplified: Requires calculateOgw function
-            flag=flag
-        )
     
     @staticmethod
     def interpolate(str key_attribute, double key_value,

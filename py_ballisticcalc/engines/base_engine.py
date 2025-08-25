@@ -386,11 +386,10 @@ class _WindSock:
     next_range: float
 
     def __init__(self, winds: Optional[Sequence[Wind]]):
-        """
-        Initializes the _WindSock class.
+        """Initializes the _WindSock class.
 
         Args:
-            winds (Optional[Sequence[Wind]], optional): A sequence of Wind objects. Defaults to None.
+            winds: A sequence of Wind objects. Defaults to None.
         """
         self.winds: Sequence[Wind] = winds or tuple()
         self.current_index: int = 0
@@ -402,14 +401,13 @@ class _WindSock:
         self.update_cache()
 
     def current_vector(self) -> "Vector":
-        """
-        Returns the current cached wind vector.
+        """Returns the current cached wind vector.
 
         Raises:
             RuntimeError: If no wind vector has been cached.
 
         Returns:
-            Vector: The current cached wind vector.
+            The current cached wind vector.
         """
         if not self._last_vector_cache:
             raise RuntimeError("No cached wind vector")
@@ -519,7 +517,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Converts Shot properties into floats dimensioned in internal units.
 
         Args:
-            shot_info (Shot): Information about the shot.
+            shot: Information about the shot.
         """
         props = ShotProps.from_shot(shot)
         props.calc_step = self.get_calc_step()
@@ -531,12 +529,11 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Finds the maximum range along shot_info.look_angle, and the launch angle to reach it.
 
         Args:
-            shot_info (Shot): The shot information: gun, ammo, environment, look_angle.
-            angle_bracket_deg (Tuple[float, float], optional): The angle bracket in degrees to search for max range.
-                                                               Defaults to (0, 90).
+            shot_info: The shot information: gun, ammo, environment, look_angle.
+            angle_bracket_deg: The angle bracket in degrees to search for max range. Defaults to (0, 90).
 
         Returns:
-            Tuple[Distance, Angular]: The maximum slant-range and the launch angle to reach it.
+            The maximum slant-range and the launch angle to reach it.
 
         Raises:
             ValueError: If the angle bracket excludes the look_angle.
@@ -556,12 +553,11 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Internal function to find the maximum slant range via golden-section search.
 
         Args:
-            props (ShotProps): The shot information: gun, ammo, environment, look_angle.
-            angle_bracket_deg (Tuple[float, float], optional): The angle bracket in degrees to search for max range.
-                                                               Defaults to (0, 90).
+            props: The shot information: gun, ammo, environment, look_angle.
+            angle_bracket_deg: The angle bracket in degrees to search for max range. Defaults to (0, 90).
 
         Returns:
-            Tuple[Distance, Angular]: The maximum slant range and the launch angle to reach it.
+            The maximum slant range and the launch angle to reach it.
 
         Raises:
             ValueError: If the angle bracket excludes the look_angle.
@@ -632,7 +628,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             where the vertical component of velocity goes from positive to negative.
 
         Args:
-            shot_info (Shot): The shot information.
+            shot_info: The shot information.
         
         Returns:
             TrajectoryData: The trajectory data at the apex of the trajectory.
@@ -651,7 +647,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Internal implementation to find the apex of the trajectory.
 
         Args:
-            props (ShotProps): The shot properties.
+            props: The shot properties.
 
         Returns:
             TrajectoryData at the trajectory's apex (where velocity.y goes from positive to negative).            
@@ -674,8 +670,8 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             Handles edge cases.
 
         Args:
-            props (ShotProps): The shot information, with look_angle to the target.
-            distance (Distance): The slant distance to the target.
+            props: The shot information, with look_angle to the target.
+            distance: The slant distance to the target.
 
         Returns:
             ZeroFindingProps
@@ -710,12 +706,12 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             using unimodal root-finding that is guaranteed to succeed if a solution exists (e.g., Ridder's method).
 
         Args:
-            shot_info (Shot): The shot information.
-            distance (Distance): Slant distance to the target.
-            lofted (bool, optional): If True, find the higher angle that hits the zero point.
+            shot_info: The shot information.
+            distance: Slant distance to the target.
+            lofted: If True, find the higher angle that hits the zero point.
 
         Returns:
-            Angular: Barrel elevation needed to hit the zero point.
+            Barrel elevation needed to hit the zero point.
         """
         props = self._init_trajectory(shot_info)
         return self._find_zero_angle(props, distance, lofted)
@@ -727,12 +723,12 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             using Ridder's method for guaranteed convergence.
 
         Args:
-            props (ShotProps): The shot information.
-            distance (Distance): The distance to the target.
-            lofted (bool, optional): If True, find the higher angle that hits the zero point.
+            props: The shot information.
+            distance: The distance to the target.
+            lofted: If True, find the higher angle that hits the zero point.
 
         Returns:
-            Angular: Barrel elevation needed to hit the zero point.
+            Barrel elevation needed to hit the zero point.
 
         TODO: Cache the trajectory calculations in _find_max_range to apply in Ridder's method.
         """
@@ -766,6 +762,10 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         def error_at_distance(angle_rad: float) -> float:
             """Target miss (in feet) for given launch angle."""
             props.barrel_elevation_rad = angle_rad
+            #TODO: This is not the correct way to get the trajectory point at the target distance
+            # ... or is it?  It's interpolating?  Should we at least check interpolation to ensure
+            # we aren't extrapolating (too far) beyond the computed trajectory points?  Or check
+            # HitResult for an error and handle it appropriately.
             t = self._integrate(props, target_x_ft, target_x_ft, filter_flags=TrajFlag.NONE)[-1]
             if t.time == 0.0:
                 logger.warning("Integrator returned initial point. Consider removing constraints.")
@@ -833,11 +833,11 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         First tries iterative approach; if that fails falls back on _find_zero_angle.
 
         Args:
-            shot_info (Shot): The shot information.
-            distance (Distance): The distance to the target.
+            shot_info: The shot information.
+            distance: The distance to the target.
 
         Returns:
-            Angular: Barrel elevation to hit height zero at zero distance along sight line
+            Barrel elevation to hit height zero at zero distance along sight line
         """
         props = self._init_trajectory(shot_info)
         try:
@@ -852,12 +852,12 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Iterative algorithm to find barrel elevation needed for a particular zero
 
         Args:
-            props (ShotProps): Shot parameters
-            distance (Distance): Sight distance to zero (i.e., along Shot.look_angle),
-                                 a.k.a. slant range to target.
+            props: Shot parameters
+            distance: Sight distance to zero (i.e., along Shot.look_angle),
+                      a.k.a. slant range to target.
 
         Returns:
-            Angular: Barrel elevation to hit height zero at zero distance along sight line
+            Barrel elevation to hit height zero at zero distance along sight line
         """
         status, look_angle_rad, slant_range_ft, target_x_ft, target_y_ft, start_height_ft = (
             self._init_zero_calculation(props, distance)
@@ -973,15 +973,15 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Integrates the trajectory for the given shot.
 
         Args:
-            shot_info (Shot): The shot information.
-            max_range (Distance): Maximum range of the trajectory (if float then treated as feet).
-            dist_step (Optional[Distance]): Distance step for recording RANGE TrajectoryData rows.
-            time_step (float, optional): Time step for recording trajectory data. Defaults to 0.0.
-            filter_flags (Union[TrajFlag, int], optional): Flags to filter trajectory data. Defaults to TrajFlag.RANGE.
-            dense_output (bool, optional): If True, HitResult will save BaseTrajData for interpolating TrajectoryData.
+            shot_info: The shot information.
+            max_range: Maximum range of the trajectory (if float then treated as feet).
+            dist_step: Distance step for recording RANGE TrajectoryData rows.
+            time_step: Time step for recording trajectory data. Defaults to 0.0.
+            filter_flags: Flags to filter trajectory data. Defaults to TrajFlag.RANGE.
+            dense_output: If True, HitResult will save BaseTrajData for interpolating TrajectoryData.
 
         Returns:
-            HitResult: Object for describing the trajectory.
+            HitResult object for describing the trajectory.
         """
         props = self._init_trajectory(shot_info)
         props.filter_flags = filter_flags
@@ -1000,17 +1000,17 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Creates HitResult for the specified shot.
 
         Args:
-            props (Shot): Information specific to the shot.
-            range_limit_ft (float): Feet down-range to stop calculation.
-            range_step_ft (float): Frequency (in feet down-range) to record TrajectoryData.
-            filter_flags (Union[TrajFlag, int]): Bitfield for trajectory points of interest to record.
-            time_step (float, optional): If > 0 then record TrajectoryData after this many seconds elapse
+            props: Information specific to the shot.
+            range_limit_ft: Feet down-range to stop calculation.
+            range_step_ft: Frequency (in feet down-range) to record TrajectoryData.
+            filter_flags: Bitfield for trajectory points of interest to record.
+            time_step (optional): If > 0 then record TrajectoryData after this many seconds elapse
                 since last record, as could happen when trajectory is nearly vertical and there is too little
                 movement down-range to trigger a record based on range.  (Defaults to 0.0)
-            dense_output (bool, optional): If True, HitResult will save BaseTrajData at each integration step,
-                for interpolating TrajectoryData.
+            dense_output (optional): If True, HitResult will save BaseTrajData at each integration step,
+                for interpolating TrajectoryData.  Defaults to False.
 
         Returns:
-            HitResult: Object describing the trajectory.
+            HitResult object describing the trajectory.
         """
         ...

@@ -1,6 +1,38 @@
 # pylint: disable=missing-class-docstring,missing-function-docstring
 # pylint: disable=line-too-long,invalid-name,attribute-defined-outside-init
-"""pure python trajectory calculation backend"""
+"""Velocity Verlet integration engine for ballistic trajectory calculations.
+
+The Velocity Verlet algorithm is a symplectic integrator that conserves energy in physical systems.
+
+Classes:
+    VelocityVerletIntegrationEngine: Concrete implementation using Velocity Verlet method
+
+Example:
+    >>> from py_ballisticcalc.engines.velocity_verlet import VelocityVerletIntegrationEngine
+    >>> from py_ballisticcalc.engines.base_engine import BaseEngineConfigDict
+    >>> 
+    >>> config = BaseEngineConfigDict(cStepMultiplier=1.0)
+    >>> engine = VelocityVerletIntegrationEngine(config)
+    >>> 
+    >>> # Use with Calculator
+    >>> from py_ballisticcalc import Calculator
+    >>> calc = Calculator(engine="verlet_engine")
+
+Mathematical Background:
+    The Velocity Verlet method updates position and velocity using:
+    
+    x(t + dt) = x(t) + v(t)*dt + 0.5*a(t)*dt²
+    v(t + dt) = v(t) + 0.5*[a(t) + a(t + dt)]*dt
+    
+    This approach ensures that position and velocity remain synchronized
+    and that the total energy of the system is conserved over long periods.
+
+Algorithm Properties:
+    - Order: 2 (local truncation error is O(h³))
+    - Symplectic: Preserves the symplectic structure of Hamiltonian systems
+    - Time-reversible: Running the algorithm backward recovers original state
+    - Energy-conserving: Total energy is preserved over long integration periods
+"""
 
 import math
 import warnings
@@ -22,15 +54,80 @@ __all__ = ('VelocityVerletIntegrationEngine',)
 
 
 class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
-    """Velocity Verlet integration engine for ballistic calculations."""
+    """Velocity Verlet integration engine for ballistic trajectory calculations.
+    
+    Algorithm Details:
+        The method uses a two-stage approach:
+        1. Update position using current velocity and acceleration
+        2. Update velocity using average of current and new acceleration
+        
+        This ensures velocity and position remain properly synchronized
+        and conserves the total energy of the system.
+    
+    Attributes:
+        DEFAULT_TIME_STEP: Default time step multiplier (0.0005).
+        integration_step_count: Number of integration steps performed.
+        
+    Class Constants:
+        DEFAULT_TIME_STEP: Base time step multiplier for Verlet integration.
+                          Small value ensures stability and accuracy.
+                          
+    Mathematical Properties:
+        - Symplectic: Preserves phase space volume (Liouville's theorem)
+        - Time-reversible: Can recover original state by reversing time
+        - Energy-conserving: Total energy fluctuates around constant value
+        - Second-order: Local truncation error is O(h³)
+        
+    Example:
+        >>> config = BaseEngineConfigDict(cStepMultiplier=1.0)
+        >>> engine = VelocityVerletIntegrationEngine(config)
+        >>> result = engine.integrate(shot_info, Distance(1000, Distance.Yard))
+        
+    See Also:
+        py_ballisticcalc.engines.rk4.RK4IntegrationEngine: Higher accuracy alternative
+        py_ballisticcalc.engines.euler.EulerIntegrationEngine: Simpler alternative
+        py_ballisticcalc.engines.scipy_engine.SciPyIntegrationEngine: Adaptive methods
+    """
     DEFAULT_TIME_STEP = 0.0005
 
-    def __init__(self, config: BaseEngineConfigDict):
+    def __init__(self, config: BaseEngineConfigDict) -> None:
+        """Initialize the Velocity Verlet integration engine.
+        
+        Args:
+            config: Configuration dictionary containing engine parameters.
+                   See BaseEngineConfigDict for available options.
+                   
+        Example:
+            >>> config = BaseEngineConfigDict(
+            ...     cStepMultiplier=0.8,
+            ...     cMinimumVelocity=50.0
+            ... )
+            >>> engine = VelocityVerletIntegrationEngine(config)
+            
+        Note:
+            The integration_step_count tracks the number of Verlet steps computed.
+        """
         super().__init__(config)
-        self.integration_step_count = 0
+        self.integration_step_count: int = 0
 
     @override
     def get_calc_step(self) -> float:
+        """Get the calculation step size for Velocity Verlet integration.
+        
+        Combines the base engine step multiplier with the Verlet-specific
+        DEFAULT_TIME_STEP to determine the effective integration step size.
+        
+        Returns:
+            Effective step size for Velocity Verlet integration.
+            
+        Formula:
+            step_size = base_step_multiplier × DEFAULT_TIME_STEP (0.0005)
+            
+        Note:
+            The small DEFAULT_TIME_STEP value (0.0005) is chosen to ensure
+            that this engine can pass all unit tests, despite most of them
+            being highly dissipative rather than conservative of energy.
+        """
         return super().get_calc_step() * self.DEFAULT_TIME_STEP
 
     @override

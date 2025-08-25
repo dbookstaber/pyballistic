@@ -1,3 +1,48 @@
+"""Runge-Kutta 4th order integration engine for ballistic trajectory calculations.
+
+The RK4 method is the default integration engine for py_ballisticcalc due to its
+optimal balance of accuracy, stability, and performance.
+
+Classes:
+    RK4IntegrationEngine: Concrete implementation using 4th-order Runge-Kutta
+
+Example:
+    >>> from py_ballisticcalc.engines.rk4 import RK4IntegrationEngine
+    >>> from py_ballisticcalc.engines.base_engine import BaseEngineConfigDict
+    >>> 
+    >>> config = BaseEngineConfigDict(cStepMultiplier=1.0)  # Standard accuracy
+    >>> engine = RK4IntegrationEngine(config)
+    >>> 
+    >>> # Use with Calculator (default engine)
+    >>> from py_ballisticcalc import Calculator
+    >>> calc = Calculator()  # Uses RK4 by default
+
+Mathematical Background:
+    The RK4 method approximates the solution to dy/dt = f(t, y) using:
+    
+    k₁ = h * f(tₙ, yₙ)
+    k₂ = h * f(tₙ + h/2, yₙ + k₁/2)
+    k₃ = h * f(tₙ + h/2, yₙ + k₂/2)
+    k₄ = h * f(tₙ + h, yₙ + k₃)
+    
+    yₙ₊₁ = yₙ + (k₁ + 2k₂ + 2k₃ + k₄)/6
+    
+    This provides fourth-order accuracy, meaning the local truncation error
+    is proportional to h⁵ (where h is the step size).
+
+Algorithm Properties:
+    - Order: 4 (local truncation error is O(h⁵))
+    - Explicit method: No equation solving required
+    - Four function evaluations per step
+    - Fixed step size (not adaptive)
+
+See Also:
+    py_ballisticcalc.engines.euler: Simpler but less accurate method
+    py_ballisticcalc.engines.scipy_engine: Adaptive high-precision methods
+    py_ballisticcalc.engines.velocity_verlet: Energy-conservative method
+    py_ballisticcalc.engines.base_engine.BaseIntegrationEngine: Base class
+"""
+
 import math
 import warnings
 
@@ -18,16 +63,65 @@ __all__ = ('RK4IntegrationEngine',)
 
 
 class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
-    """Runge-Kutta 4th order integration engine for ballistic calculations."""
+    """Runge-Kutta 4th order integration engine for ballistic trajectory calculations.
+    
+    Attributes:
+        integration_step_count: Number of integration steps performed.
+        
+    Example:
+        >>> config = BaseEngineConfigDict(cStepMultiplier=0.2)  # Higher precision
+        >>> engine = RK4IntegrationEngine(config)
+        >>> result = engine.integrate(shot_info, Distance(1200, Distance.Yard))
+        
+        >>> # Compare accuracy vs. step size
+        >>> fast_config = BaseEngineConfigDict(cStepMultiplier=5.0)
+    """
     DEFAULT_TIME_STEP = 0.0025
 
-    def __init__(self, config: BaseEngineConfigDict):
+    def __init__(self, config: BaseEngineConfigDict) -> None:
+        """Initialize the RK4 integration engine.
+        
+        Args:
+            config: Configuration dictionary containing engine parameters.
+                   See BaseEngineConfigDict for available options.
+                   Common settings include cStepMultiplier for accuracy control
+                   and cMinimumVelocity for termination conditions.
+                   
+        Example:
+            >>> # High precision configuration
+            >>> precise_config = BaseEngineConfigDict(
+            ...     cStepMultiplier=0.5,  # Smaller steps
+            ...     cMinimumVelocity=20.0  # Continue to lower velocities
+            ... )
+            >>> precise_engine = RK4IntegrationEngine(precise_config)
+        """
         super().__init__(config)
-        self.integration_step_count = 0
+        self.integration_step_count: int = 0
         self.trajectory_count = 0  # Number of trajectories calculated
 
     @override
     def get_calc_step(self) -> float:
+        """Get the calculation step size for RK4 integration.
+        
+        Returns:
+            Time-step size (in seconds) for integration calculations.
+            
+        Mathematical Context:
+            The step size directly affects the accuracy and computational cost:
+            - Smaller steps: Higher accuracy, more computation
+            - Larger steps: Lower accuracy, faster computation
+            - RK4's O(h⁵) error means accuracy improves rapidly with smaller h
+            
+        Example:
+            >>> config = BaseEngineConfigDict(cStepMultiplier=0.5)
+            >>> engine = RK4IntegrationEngine(config)
+            >>> step = engine.get_calc_step()  # Returns 0.5
+            
+        Note:
+            For RK4, the relationship between step size and accuracy is:
+            - Halving the step size reduces error by ~32× (2⁵)
+            - Default step size is sufficient to pass unit tests.
+        """
         return super().get_calc_step() * self.DEFAULT_TIME_STEP
 
     @override
@@ -38,15 +132,15 @@ class RK4IntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         Creates HitResult for the specified shot.
 
         Args:
-            props (Shot): Information specific to the shot.
-            range_limit_ft (float): Feet down-range to stop calculation.
-            range_step_ft (float): Frequency (in feet down-range) to record TrajectoryData.
-            filter_flags (Union[TrajFlag, int]): Bitfield for trajectory points of interest to record.
-            time_step (float, optional): If > 0 then record TrajectoryData after this many seconds elapse
+            props: Information specific to the shot.
+            range_limit_ft: Feet down-range to stop calculation.
+            range_step_ft: Frequency (in feet down-range) to record TrajectoryData.
+            filter_flags: Bitfield for trajectory points of interest to record.
+            time_step: If > 0 then record TrajectoryData after this many seconds elapse
                 since last record, as could happen when trajectory is nearly vertical and there is too little
                 movement down-range to trigger a record based on range.  (Defaults to 0.0)
-            dense_output (bool, optional): If True, HitResult will save BaseTrajData at each integration step,
-                for interpolating TrajectoryData.
+            dense_output: If True, HitResult will save BaseTrajData at each integration step,
+                enabling accurate interpolation of TrajectoryData points.
 
         Returns:
             HitResult: Object describing the trajectory.

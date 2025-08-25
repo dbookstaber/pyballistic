@@ -36,7 +36,7 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
         """Calculate time step based on current projectile speed."""
         return base_step / fmax(<double>1.0, velocity)
 
-    cdef object _integrate(CythonizedEulerIntegrationEngine self, ShotProps_t *shot_props_ptr,
+    cdef tuple _integrate(CythonizedEulerIntegrationEngine self, ShotProps_t *shot_props_ptr,
                            double range_limit_ft, double range_step_ft,
                            double time_step, int filter_flags):
         """

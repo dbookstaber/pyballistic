@@ -1,6 +1,43 @@
 # pylint: disable=missing-class-docstring,missing-function-docstring
 # pylint: disable=line-too-long,invalid-name,attribute-defined-outside-init
-"""pure python trajectory calculation backend"""
+"""Euler integration engine for ballistic trajectory calculations.
+
+The Euler method is a first-order numerical integration technique.  While
+less accurate and efficient than higher-order methods like Runge-Kutta,
+the Euler method is easy to understand.
+
+Classes:
+    EulerIntegrationEngine: Concrete implementation using Euler's method
+
+Key Features:
+    - First-order numerical integration
+    - Adaptive time stepping based on projectile velocity
+
+Example:
+    >>> from py_ballisticcalc.engines.euler import EulerIntegrationEngine
+    >>> from py_ballisticcalc.engines.base_engine import BaseEngineConfigDict
+    >>> 
+    >>> config = BaseEngineConfigDict(cStepMultiplier=0.5)  # Smaller steps for better accuracy
+    >>> engine = EulerIntegrationEngine(config)
+    >>> 
+    >>> # Use with Calculator
+    >>> from py_ballisticcalc import Calculator
+    >>> calc = Calculator(engine="euler_engine")
+
+Mathematical Background:
+    The Euler method approximates the solution to the differential equation
+    dy/dt = f(t, y) using the formula:
+    
+    y(t + h) = y(t) + h * f(t, y(t))
+    
+    For ballistic calculations, this translates to updating position and
+    velocity based on current acceleration values.
+
+See Also:
+    py_ballisticcalc.engines.rk4: More accurate RK4 integration
+    py_ballisticcalc.engines.velocity_verlet: Energy-conservative integration
+    py_ballisticcalc.engines.base_engine.BaseIntegrationEngine: Base class
+"""
 
 import math
 import warnings
@@ -22,19 +59,82 @@ __all__ = ('EulerIntegrationEngine',)
 
 
 class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
-    """Euler integration engine for ballistic calculations."""
+    """Euler integration engine for ballistic trajectory calculations.
+    
+    Attributes:
+        DEFAULT_STEP: Default step size multiplier for integration (0.5).
+        integration_step_count: Number of integration steps performed.
+        
+    Example:
+        >>> config = BaseEngineConfigDict(cMinimumVelocity=100.0)
+        >>> engine = EulerIntegrationEngine(config)
+        >>> result = engine.integrate(shot_info, Distance(1000, Distance.Yard))
+    """
     DEFAULT_STEP = 0.5
 
-    def __init__(self, config: BaseEngineConfigDict):
+    def __init__(self, config: BaseEngineConfigDict) -> None:
+        """Initialize the Euler integration engine.
+        
+        Args:
+            config: Configuration dictionary containing engine parameters.
+                   See BaseEngineConfigDict for available options.
+                   
+        Example:
+            >>> config = BaseEngineConfigDict(cMinimumVelocity=75.0)
+            >>> engine = EulerIntegrationEngine(config)
+        """
         super().__init__(config)
-        self.integration_step_count = 0
+        self.integration_step_count: int = 0
 
     @override
     def get_calc_step(self) -> float:
+        """Get the base calculation step size for Euler integration.
+        
+        Calculates the effective step size by combining the base engine
+        step multiplier with the Euler-specific DEFAULT_STEP constant.
+        The step size directly affects accuracy and performance trade-offs.
+        This is a distance-like quantity that is subsequently scaled by velocity
+        to produce a time-like integration step.
+        
+        Returns:
+            Base step size for integration calculations.
+
+        Note:
+            The step size is calculated as:  cStepMultiplier × DEFAULT_STEP
+            Smaller step sizes increase accuracy but require more computation.
+            The DEFAULT_STEP is sufficient to pass all unit tests.
+        """
         return super().get_calc_step() * self.DEFAULT_STEP
 
     def time_step(self, base_step: float, velocity: float) -> float:
-        """Calculate time step based on current projectile speed."""
+        """Calculate adaptive time step based on current projectile velocity.
+        
+        Implements adaptive time stepping where the time step is inversely
+        related to projectile velocity. This helps maintain numerical stability
+        and accuracy as the projectile slows down or speeds up.
+        
+        Args:
+            base_step: Base step size from the integration engine.
+            velocity: Current projectile velocity in fps.
+            
+        Returns:
+            Adaptive time step for the current integration step.
+            
+        Formula:
+            time_step = base_step / max(1.0, velocity)
+            
+        Example:
+            >>> engine = EulerIntegrationEngine(config)
+            >>> # High velocity -> smaller time step
+            >>> step_high = engine.time_step(0.5, 2800.0)  # ≈ 0.000179
+            >>> # Low velocity -> larger time step  
+            >>> step_low = engine.time_step(0.5, 100.0)    # = 0.005
+            
+        Note:
+            The max(1.0, velocity) ensures that the time step never becomes
+            excessively large, maintaining numerical stability even at very
+            low velocities.
+        """
         return base_step / max(1.0, velocity)
 
     @override
@@ -45,14 +145,14 @@ class EulerIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict]):
         Creates HitResult for the specified shot.
 
         Args:
-            props (Shot): Information specific to the shot.
-            range_limit_ft (float): Feet down-range to stop calculation.
-            range_step_ft (float): Frequency (in feet down-range) to record TrajectoryData.
-            filter_flags (Union[TrajFlag, int]): Bitfield for trajectory points of interest to record.
-            time_step (float, optional): If > 0 then record TrajectoryData after this many seconds elapse
+            props: Information specific to the shot.
+            range_limit_ft: Feet down-range to stop calculation.
+            range_step_ft: Frequency (in feet down-range) to record TrajectoryData.
+            filter_flags: Bitfield for trajectory points of interest to record.
+            time_step: If > 0 then record TrajectoryData after this many seconds elapse
                 since last record, as could happen when trajectory is nearly vertical and there is too little
                 movement down-range to trigger a record based on range.  (Defaults to 0.0)
-            dense_output (bool, optional): If True, HitResult will save BaseTrajData at each integration step,
+            dense_output: If True, HitResult will save BaseTrajData at each integration step,
                 for interpolating TrajectoryData.
 
         Returns:
