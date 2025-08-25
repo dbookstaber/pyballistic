@@ -2,6 +2,27 @@
 
 This page is for contributors who want to modify algorithms, add engines, or extend the project.
 
+## Recommended one-step dev setup (cross-platform)
+
+```bash
+# create/sync venv with dev + exts
+uv sync --python 3.12 --dev --extra exts
+
+# install editable local packages into the active venv
+uv pip install -e ./py_ballisticcalc.exts
+uv pip install -e .
+
+# activate & test
+source .venv/bin/activate   # Linux/macOS
+# .\.venv\Scripts\activate  # Windows
+python -m pytest tests --engine="rk4_engine"
+```
+
+Notes:
+- The repo includes a `sitecustomize.py` that disables user site-packages and warns if you are not using the local `.venv`, to prevent stale/external packages from shadowing your build.
+- VS Code settings and `.env` pin the interpreter to `.venv` and set `PYTHONNOUSERSITE=1` automatically.
+ - If you prefer pip, using `python -m pip install -e ./py_ballisticcalc.exts` (then `python -m pip install -e .`) works fine when the venv is activated.
+
 ## CI and `uv.lock`
 Development dependencies and reproducible developer/CI installs are pinned in `uv.lock`.
 * This lockfile is for maintainers and CI reproducibility; it is not used by library consumers who install via pip/pyproject.

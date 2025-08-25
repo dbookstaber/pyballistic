@@ -1,6 +1,7 @@
 # pxd for py_ballisticcalc_exts.base_engine
 
 from py_ballisticcalc_exts.cy_bindings cimport Config_t, Wind_t, ShotProps_t
+from py_ballisticcalc_exts.trajectory_data cimport BaseTrajDataT
 from py_ballisticcalc_exts.v3d cimport V3dT
 
 # __all__ definitions belong in .pyx/.py files, not .pxd headers.
@@ -27,7 +28,7 @@ cdef extern from "include/bclib.h" nogil:
 
 
 # Function to create and initialize a WindSock_t
-cdef WindSock_t * WindSock_t_create(object winds_py_list)
+cdef WindSock_t * WindSock_t_create(object winds_py_list) except NULL
 
 
 cdef class CythonizedBaseIntegrationEngine:
@@ -55,7 +56,7 @@ cdef class CythonizedBaseIntegrationEngine:
     cdef object _find_zero_angle(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, double distance, bint lofted)
     cdef object _zero_angle(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, double distance)
     cdef tuple _find_max_range(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, tuple angle_bracket_deg = *)
-    cdef object _find_apex(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr)
+    cdef BaseTrajDataT _find_apex(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr)
     cdef double _error_at_distance(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr,
                                    double angle_rad, double target_x_ft, double target_y_ft)
     # In contrast to Python engines, _integrate here returns (CBaseTrajSeq, Optional[error_str])

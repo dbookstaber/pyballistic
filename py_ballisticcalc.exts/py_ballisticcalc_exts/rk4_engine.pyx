@@ -52,7 +52,6 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
         Returns:
             (CBaseTrajSeq, optional error)
 
-        TODO: Switch from self._shot_s to shot_props_ptr
         """
         cdef:
             double velocity, delta_time
@@ -65,7 +64,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             V3dT relative_velocity
             V3dT gravity_vector
             V3dT wind_vector
-            double calc_step = self._shot_s.calc_step
+            double calc_step
             
             # Early binding of configuration constants
             double _cMinimumVelocity = self._config_s.cMinimumVelocity
@@ -98,24 +97,25 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
         wind_vector = WindSock_t_currentVector(self._wind_sock)
 
         # Initialize velocity and position vectors
-        velocity = self._shot_s.muzzle_velocity
+        velocity = shot_props_ptr[0].muzzle_velocity
+        calc_step = shot_props_ptr[0].calc_step
         
         # Set range_vector components directly
         range_vector.x = <double>0.0
-        range_vector.y = -self._shot_s.cant_cosine * self._shot_s.sight_height
-        range_vector.z = -self._shot_s.cant_sine * self._shot_s.sight_height
+        range_vector.y = -shot_props_ptr[0].cant_cosine * shot_props_ptr[0].sight_height
+        range_vector.z = -shot_props_ptr[0].cant_sine * shot_props_ptr[0].sight_height
         
         # Set direction vector components
-        _dir_vector.x = cos(self._shot_s.barrel_elevation) * cos(self._shot_s.barrel_azimuth)
-        _dir_vector.y = sin(self._shot_s.barrel_elevation)
-        _dir_vector.z = cos(self._shot_s.barrel_elevation) * sin(self._shot_s.barrel_azimuth)
+        _dir_vector.x = cos(shot_props_ptr[0].barrel_elevation) * cos(shot_props_ptr[0].barrel_azimuth)
+        _dir_vector.y = sin(shot_props_ptr[0].barrel_elevation)
+        _dir_vector.z = cos(shot_props_ptr[0].barrel_elevation) * sin(shot_props_ptr[0].barrel_azimuth)
         
         # Calculate velocity vector
         velocity_vector = mulS(&_dir_vector, velocity)
 
         Atmosphere_t_updateDensityFactorAndMachForAltitude(
-            &self._shot_s.atmo,
-            self._shot_s.alt0 + range_vector.y,
+            &shot_props_ptr[0].atmo,
+            shot_props_ptr[0].alt0 + range_vector.y,
             &density_ratio,
             &mach
         )
@@ -133,8 +133,8 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
 
             # Update air density and mach at current altitude
             Atmosphere_t_updateDensityFactorAndMachForAltitude(
-                &self._shot_s.atmo,
-                self._shot_s.alt0 + range_vector.y,
+                &shot_props_ptr[0].atmo,
+                shot_props_ptr[0].alt0 + range_vector.y,
                 &density_ratio,
                 &mach
             )
@@ -152,8 +152,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             relative_speed = mag(&relative_velocity)
 
             delta_time = calc_step
-            km = density_ratio * ShotProps_t_dragByMach(&self._shot_s, relative_speed / mach)
-            drag = km * relative_speed
+            km = density_ratio * ShotProps_t_dragByMach(shot_props_ptr, relative_speed / mach)
 
             #region RK4 integration
             
@@ -215,7 +214,7 @@ cdef class CythonizedRK4IntegrationEngine(CythonizedBaseIntegrationEngine):
             # Check termination conditions
             if (velocity < _cMinimumVelocity
                 or range_vector.y < _cMaximumDrop
-                or self._shot_s.alt0 + range_vector.y < _cMinimumAltitude
+                or shot_props_ptr[0].alt0 + range_vector.y < _cMinimumAltitude
             ):
                 if velocity < _cMinimumVelocity:
                     termination_reason = RangeError.MinimumVelocityReached

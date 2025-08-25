@@ -42,23 +42,38 @@ cdef object _v3d_to_vector(V3dT v):
 
 @final
 cdef class BaseTrajDataT:
-    __slots__ = ('time', 'position', 'velocity', 'mach')
+    __slots__ = ('time', '_position', '_velocity', 'mach')
 
     def __cinit__(self, double time, V3dT position, V3dT velocity, double mach):
         self.time = time
-        self.position = position
-        self.velocity = velocity
+        self._position = position
+        self._velocity = velocity
         self.mach = mach
 
+    # Hot-path C accessors (used by Cython code directly)
+    cdef V3dT c_position(self):
+        return self._position
+
+    cdef V3dT c_velocity(self):
+        return self._velocity
+
+    # Python-facing properties return Vector, not dict
+    @property
+    def position(self):
+        return _v3d_to_vector(self._position)
+
+    @property
+    def velocity(self):
+        return _v3d_to_vector(self._velocity)
+
+    # Back-compat names used elsewhere in ext code
     @property
     def position_vector(self):
-        """Return a Python Vector copy of the internal C V3dT position."""
-        return _v3d_to_vector(self.position)
+        return _v3d_to_vector(self._position)
 
     @property
     def velocity_vector(self):
-        """Return a Python Vector copy of the internal C V3dT velocity."""
-        return _v3d_to_vector(self.velocity)
+        return _v3d_to_vector(self._velocity)
 
     @staticmethod
     def interpolate(str key_attribute, double key_value,
@@ -101,42 +116,42 @@ cdef class BaseTrajDataT:
             x1 = _p1.mach
             x2 = _p2.mach
         elif key_attribute == 'position.x':
-            x0 = _p0.position.x
-            x1 = _p1.position.x
-            x2 = _p2.position.x
+            x0 = _p0._position.x
+            x1 = _p1._position.x
+            x2 = _p2._position.x
         elif key_attribute == 'position.y':
-            x0 = _p0.position.y
-            x1 = _p1.position.y
-            x2 = _p2.position.y
+            x0 = _p0._position.y
+            x1 = _p1._position.y
+            x2 = _p2._position.y
         elif key_attribute == 'position.z':
-            x0 = _p0.position.z
-            x1 = _p1.position.z
-            x2 = _p2.position.z
+            x0 = _p0._position.z
+            x1 = _p1._position.z
+            x2 = _p2._position.z
         elif key_attribute == 'velocity.x':
-            x0 = _p0.velocity.x
-            x1 = _p1.velocity.x
-            x2 = _p2.velocity.x
+            x0 = _p0._velocity.x
+            x1 = _p1._velocity.x
+            x2 = _p2._velocity.x
         elif key_attribute == 'velocity.y':
-            x0 = _p0.velocity.y
-            x1 = _p1.velocity.y
-            x2 = _p2.velocity.y
+            x0 = _p0._velocity.y
+            x1 = _p1._velocity.y
+            x2 = _p2._velocity.y
         elif key_attribute == 'velocity.z':
-            x0 = _p0.velocity.z
-            x1 = _p1.velocity.z
-            x2 = _p2.velocity.z
+            x0 = _p0._velocity.z
+            x1 = _p1._velocity.z
+            x2 = _p2._velocity.z
         else:
             raise AttributeError(f"Cannot interpolate on '{key_attribute}'")
 
         # Lagrange quadratic interpolation for all fields
         time = lagrange_quadratic(key_value, x0, _p0.time, x1, _p1.time, x2, _p2.time) if key_attribute != 'time' else key_value
-        px = lagrange_quadratic(key_value, x0, _p0.position.x, x1, _p1.position.x, x2, _p2.position.x)
-        py = lagrange_quadratic(key_value, x0, _p0.position.y, x1, _p1.position.y, x2, _p2.position.y)
-        pz = lagrange_quadratic(key_value, x0, _p0.position.z, x1, _p1.position.z, x2, _p2.position.z)
-        vx = lagrange_quadratic(key_value, x0, _p0.velocity.x, x1, _p1.velocity.x, x2, _p2.velocity.x)
-        vy = lagrange_quadratic(key_value, x0, _p0.velocity.y, x1, _p1.velocity.y, x2, _p2.velocity.y)
-        vz = lagrange_quadratic(key_value, x0, _p0.velocity.z, x1, _p1.velocity.z, x2, _p2.velocity.z)
+        px = lagrange_quadratic(key_value, x0, _p0._position.x, x1, _p1._position.x, x2, _p2._position.x)
+        py = lagrange_quadratic(key_value, x0, _p0._position.y, x1, _p1._position.y, x2, _p2._position.y)
+        pz = lagrange_quadratic(key_value, x0, _p0._position.z, x1, _p1._position.z, x2, _p2._position.z)
+        vx = lagrange_quadratic(key_value, x0, _p0._velocity.x, x1, _p1._velocity.x, x2, _p2._velocity.x)
+        vy = lagrange_quadratic(key_value, x0, _p0._velocity.y, x1, _p1._velocity.y, x2, _p2._velocity.y)
+        vz = lagrange_quadratic(key_value, x0, _p0._velocity.z, x1, _p1._velocity.z, x2, _p2._velocity.z)
         mach = lagrange_quadratic(key_value, x0, _p0.mach, x1, _p1.mach, x2, _p2.mach) if key_attribute != 'mach' else key_value
-        
+
         return BaseTrajDataT_create(time, set(px, py, pz), set(vx, vy, vz), mach)
 
 cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) except -1.0 nogil:
@@ -199,19 +214,19 @@ cdef class TrajectoryDataT:
     @staticmethod
     def from_base_data(object props, BaseTrajDataT data, int flag=TrajFlag_t.NONE):
         """Create a TrajectoryData instance from a BaseTrajData object."""
-        cdef double velocity_mag = mag(&data.velocity)
+        cdef double velocity_mag = mag(&data._velocity)
         
         return TrajectoryDataT(
             time=data.time,
-            distance=_new_feet(data.position.x),
+            distance=_new_feet(data._position.x),
             velocity=_new_fps(velocity_mag),
             mach=velocity_mag / data.mach if data.mach != 0 else 0.0,
-            height=_new_feet(data.position.y),
-            slant_height=_new_feet(data.position.y),  # Simplified: In the original it uses look_angle
+            height=_new_feet(data._position.y),
+            slant_height=_new_feet(data._position.y),  # Simplified: In the original it uses look_angle
             drop_adj=_new_rad(<double>0.0),  # Simplified: Requires getCorrection function
-            windage=_new_feet(data.position.z),
+            windage=_new_feet(data._position.z),
             windage_adj=_new_rad(<double>0.0),  # Simplified: Requires getCorrection function
-            slant_distance=_new_feet(data.position.x),  # Simplified: In the original it uses look_angle
+            slant_distance=_new_feet(data._position.x),  # Simplified: In the original it uses look_angle
             angle=_new_rad(<double>0.0),  # Simplified: In the original it calculates trajectory_angle
             density_ratio=<double>0.0,
             drag=<double>0.0,

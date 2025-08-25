@@ -29,9 +29,12 @@ cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double
 cdef class BaseTrajDataT:
     cdef:
         readonly double time
-        readonly V3dT position
-        readonly V3dT velocity
+        readonly V3dT _position
+        readonly V3dT _velocity
         readonly double mach
+    # Hot-path C accessors (must be declared in .pxd to avoid Cython errors)
+    cdef V3dT c_position(self)
+    cdef V3dT c_velocity(self)
 
 cdef class TrajectoryDataT:
     cdef:

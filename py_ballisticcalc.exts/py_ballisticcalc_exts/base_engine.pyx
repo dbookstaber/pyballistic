@@ -6,7 +6,7 @@ Presently ._integrate() returns dense data in a CBaseTrajSeq, then .integrate()
 TODO: Implement a Cython TrajectoryDataFilter.
 """
 # noinspection PyUnresolvedReferences
-from cython.cimports.cpython cimport exc
+# (Avoid importing cpython.exc; raise Python exceptions directly in cdef functions where needed)
 # noinspection PyUnresolvedReferences
 from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
@@ -46,37 +46,36 @@ __all__ = (
     'CythonizedBaseIntegrationEngine',
 )
 
-cdef WindSock_t * WindSock_t_create(object winds_py_list):
+cdef WindSock_t * WindSock_t_create(object winds_py_list) except NULL:
     """
     Creates and initializes a WindSock_t struct from a Python list of wind objects.
     This function handles the allocation of the struct and its internal Wind_t array.
     """
     cdef WindSock_t * ws = <WindSock_t *>malloc(sizeof(WindSock_t))
-    if ws is NULL:
-        # Handle memory allocation failure (e.g., raise a MemoryError)
-        # Since this is pure Cython, you might opt for error codes or propagate exceptions.
-        # For now, let's print and return NULL.
-        exc.PyErr_NoMemory() # Set Python's MemoryError
-        return NULL
+    if <void*>ws == NULL:
+        raise MemoryError()
 
-    ws.length = len(winds_py_list)
-    ws.winds = <Wind_t *>malloc(ws.length * sizeof(Wind_t))
-
-    if ws.winds is NULL:
-        # Handle memory allocation failure for winds array
-        free(ws) # Free the outer struct as well
-        exc.PyErr_NoMemory()
-        return NULL
+    ws.length = <int>len(winds_py_list)
+    ws.winds = <Wind_t *>malloc(<size_t>ws.length * sizeof(Wind_t))
+    if <void*>ws.winds == NULL:
+        free(<void*>ws)
+        raise MemoryError()
 
     cdef int i
-    for i in range(ws.length):
-        ws.winds[i] = Wind_t_from_python(winds_py_list[i])
+    try:
+        for i in range(ws.length):
+            ws.winds[i] = Wind_t_from_python(winds_py_list[i])
+    except Exception:
+        free(<void*>ws.winds)
+        ws.winds = <Wind_t *>NULL
+        free(<void*>ws)
+        raise RuntimeError("Invalid wind entry in winds list")
 
     ws.current = 0
     ws.next_range = cMaxWindDistanceFeet
-    ws.last_vector_cache.x = 0.0
-    ws.last_vector_cache.y = 0.0
-    ws.last_vector_cache.z = 0.0
+    ws.last_vector_cache.x = <double>0.0
+    ws.last_vector_cache.y = <double>0.0
+    ws.last_vector_cache.z = <double>0.0
 
     # Initialize cache correctly
     WindSock_t_updateCache(ws)
@@ -206,8 +205,11 @@ cdef class CythonizedBaseIntegrationEngine:
         range_limit_ft = max_range._feet
         range_step_ft = dist_step._feet if dist_step is not None else range_limit_ft
         shot_props_ptr = self._init_trajectory(shot_info)
-        object = self._integrate(shot_props_ptr, range_limit_ft, range_step_ft, time_step, filter_flags)
-        self._free_trajectory()
+        try:
+            object = self._integrate(shot_props_ptr, range_limit_ft, range_step_ft, time_step, filter_flags)
+        finally:
+            # Always release C resources
+            self._free_trajectory()
         props = ShotProps.from_shot(shot_info)
         props.filter_flags = filter_flags
         props.calc_step = self.get_calc_step()  # Add missing calc_step attribute
@@ -245,30 +247,25 @@ cdef class CythonizedBaseIntegrationEngine:
         cdef double t_height_ft
         cdef double t_distance_ft
         shot_props_ptr[0].barrel_elevation = angle_rad
-        try:
-            result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
-            trajectory = <CBaseTrajSeq>result[0]
-        except Exception:
-            return <double>9e9
+        result = self._integrate(shot_props_ptr, target_x_ft, target_x_ft, <double>0.0, <int>TrajFlag_t.NONE)
+        trajectory = <CBaseTrajSeq>result[0]
+        # If trajectory is too short for quadratic interpolation, treat as unreachable
         n = <Py_ssize_t>len(trajectory)
-        if n < 2:
+        if n < <Py_ssize_t>3:
             return <double>9e9
-        last_ptr = trajectory.c_getitem(n - 1)
-        if last_ptr.px + 1e-9 < target_x_ft:
-            # Did not reach target x; avoid raising from get_at
+        last_ptr = trajectory.c_getitem(<Py_ssize_t>(-1))
+        if last_ptr.time == 0.0:
+            # Integrator returned only the initial point; signal unreachable
             return <double>9e9
         try:
-            hit = (<object>trajectory).get_at('position.x', <double>target_x_ft)
+            hit = trajectory.get_at('position.x', target_x_ft)
         except Exception:
+            # Any interpolation failure (e.g., degenerate points) signals unreachable
             return <double>9e9
-        if hit.time == <double>0.0:
-            return <double>9e9
-        t_height_ft = <double>hit.position.y
-        t_distance_ft = <double>hit.position.x
-        return t_height_ft - target_y_ft - fabs(t_distance_ft - target_x_ft)
+        return (hit.position.y - target_y_ft) - fabs(hit.position.x - target_x_ft)
 
     cdef void _free_trajectory(CythonizedBaseIntegrationEngine self):
-        if self._wind_sock is not NULL:
+        if self._wind_sock != NULL:
             WindSock_t_free(self._wind_sock)
             self._wind_sock = NULL
         ShotProps_t_free(&self._shot_s)
@@ -295,37 +292,47 @@ cdef class CythonizedBaseIntegrationEngine:
         self.gravity_vector = V3dT(.0, self._config_s.cGravityConstant, .0)
 
         self._table_data = shot_info.ammo.dm.drag_table
-        self._shot_s = ShotProps_t(
-            bc=shot_info.ammo.dm.BC,
-            curve=Curve_t_from_pylist(self._table_data),
-            mach_list=MachList_t_from_pylist(self._table_data),
-            look_angle=shot_info.look_angle._rad,
-            twist=shot_info.weapon.twist._inch,
-            length=shot_info.ammo.dm.length._inch,
-            diameter=shot_info.ammo.dm.diameter._inch,
-            weight=shot_info.ammo.dm.weight._grain,
-            barrel_elevation=shot_info.barrel_elevation._rad,
-            barrel_azimuth=shot_info.barrel_azimuth._rad,
-            sight_height=shot_info.weapon.sight_height._feet,
-            cant_cosine=cos(shot_info.cant_angle._rad),
-            cant_sine=sin(shot_info.cant_angle._rad),
-            alt0=shot_info.atmo.altitude._feet,
-            calc_step=self.get_calc_step(),
-            diameter=shot_info.ammo.dm.diameter._inch,
-            stability_coefficient=0.0,
-            filter_flags=0,
-            atmo=Atmosphere_t(
-                _t0=shot_info.atmo._t0,
-                _a0=shot_info.atmo._a0,
-                _p0=shot_info.atmo._p0,
-                _mach=shot_info.atmo._mach,
-                density_ratio=shot_info.atmo.density_ratio,
-                cLowestTempC=shot_info.atmo.cLowestTempC,
+        # Build C shot struct with robust cleanup on any error that follows
+        try:
+            self._shot_s = ShotProps_t(
+                bc=shot_info.ammo.dm.BC,
+                curve=Curve_t_from_pylist(self._table_data),
+                mach_list=MachList_t_from_pylist(self._table_data),
+                look_angle=shot_info.look_angle._rad,
+                twist=shot_info.weapon.twist._inch,
+                length=shot_info.ammo.dm.length._inch,
+                diameter=shot_info.ammo.dm.diameter._inch,
+                weight=shot_info.ammo.dm.weight._grain,
+                barrel_elevation=shot_info.barrel_elevation._rad,
+                barrel_azimuth=shot_info.barrel_azimuth._rad,
+                sight_height=shot_info.weapon.sight_height._feet,
+                cant_cosine=cos(shot_info.cant_angle._rad),
+                cant_sine=sin(shot_info.cant_angle._rad),
+                alt0=shot_info.atmo.altitude._feet,
+                calc_step=self.get_calc_step(),
+                diameter=shot_info.ammo.dm.diameter._inch,
+                stability_coefficient=0.0,
+                filter_flags=0,
+                atmo=Atmosphere_t(
+                    _t0=shot_info.atmo._t0,
+                    _a0=shot_info.atmo._a0,
+                    _p0=shot_info.atmo._p0,
+                    _mach=shot_info.atmo._mach,
+                    density_ratio=shot_info.atmo.density_ratio,
+                    cLowestTempC=shot_info.atmo.cLowestTempC,
+                )
             )
-        )
-        self._shot_s.muzzle_velocity = shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp)._fps
-        if ShotProps_t_updateStabilityCoefficient(&self._shot_s) < 0:
-            raise ZeroDivisionError("Zero division detected in ShotProps_t_updateStabilityCoefficient")
+            self._shot_s.muzzle_velocity = shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp)._fps
+            if ShotProps_t_updateStabilityCoefficient(&self._shot_s) < 0:
+                raise ZeroDivisionError("Zero division detected in ShotProps_t_updateStabilityCoefficient")
+        except Exception:
+            # Ensure we free any partially allocated arrays inside _shot_s
+            ShotProps_t_free(&self._shot_s)
+            self._shot_s.mach_list.array = NULL
+            self._shot_s.mach_list.length = 0
+            self._shot_s.curve.points = NULL
+            self._shot_s.curve.length = 0
+            raise
 
         self._wind_sock = WindSock_t_create(shot_info.winds)
         if self._wind_sock is NULL:
@@ -367,8 +374,8 @@ cdef class CythonizedBaseIntegrationEngine:
         
         # Edge case: Virtually vertical shot; just check if it can reach the target
         if fabs(look_angle_rad - 1.5707963267948966) < _APEX_IS_MAX_RANGE_RADIANS:  # π/2 radians = 90 degrees
-            # Compute slant distance at apex using position and look angle
-            apex = <BaseTrajDataT>self._find_apex(shot_props_ptr)
+            # Compute slant distance at apex using robust accessor
+            apex = self._find_apex(shot_props_ptr)
             apex_slant_ft = apex.position.x * cos(look_angle_rad) + apex.position.y * sin(look_angle_rad)
             if apex_slant_ft < slant_range_ft:
                 raise OutOfRangeError(_new_feet(distance), _new_feet(apex_slant_ft), _new_rad(look_angle_rad))
@@ -407,6 +414,14 @@ cdef class CythonizedBaseIntegrationEngine:
         if fabs(slant_range_ft - max_range_ft) < _ALLOWED_ZERO_ERROR_FEET:
             return angle_at_max
 
+        # Backup and adjust constraints (emulate @with_no_minimum_velocity)
+        cdef double restore_cMinimumVelocity__zero = <double>0.0
+        cdef int has_restore_cMinimumVelocity__zero = 0
+        if self._config_s.cMinimumVelocity != <double>0.0:
+            restore_cMinimumVelocity__zero = self._config_s.cMinimumVelocity
+            self._config_s.cMinimumVelocity = <double>0.0
+            has_restore_cMinimumVelocity__zero = 1
+
         # 3. Establish search bracket for the zero angle.
         cdef:
             double low_angle, high_angle
@@ -422,53 +437,61 @@ cdef class CythonizedBaseIntegrationEngine:
             low_angle = look_angle_rad - sight_height_adjust
             high_angle = angle_at_max_rad
 
-        f_low = self._error_at_distance(shot_props_ptr, low_angle, target_x_ft, target_y_ft)
-        f_high = self._error_at_distance(shot_props_ptr, high_angle, target_x_ft, target_y_ft)
+        # Prepare variables for Ridder's method outside of try block to satisfy Cython
+        cdef int iteration
+        cdef double mid_angle, f_mid, s, next_angle, f_next
 
-        if f_low * f_high >= 0:
-            lofted_str = "lofted" if lofted else "low"
-            reason = f"No {lofted_str} zero trajectory in elevation range "
-            reason += f"({low_angle * 57.29577951308232:.2f}, "  # Convert to degrees
-            reason += f"{high_angle * 57.29577951308232:.2f} deg). "
-            reason += f"Errors at bracket: f(low)={f_low:.2f}, f(high)={f_high:.2f}"
-            raise ZeroFindingError(target_y_ft, 0, _new_rad(shot_props_ptr[0].barrel_elevation), reason=reason)
+        try:
+            f_low = self._error_at_distance(shot_props_ptr, low_angle, target_x_ft, target_y_ft)
+            # If low is exactly look angle and failed to evaluate, nudge slightly upward to bracket
+            if f_low > <double>1e8 and fabs(low_angle - look_angle_rad) < <double>1e-9:
+                low_angle = look_angle_rad + <double>1e-3
+                f_low = self._error_at_distance(shot_props_ptr, low_angle, target_x_ft, target_y_ft)
+            f_high = self._error_at_distance(shot_props_ptr, high_angle, target_x_ft, target_y_ft)
 
-        # 4. Ridder's method implementation
-        cdef:
-            int iteration
-            double mid_angle, f_mid, s, next_angle, f_next
+            if f_low * f_high >= 0:
+                lofted_str = "lofted" if lofted else "low"
+                reason = f"No {lofted_str} zero trajectory in elevation range "
+                reason += f"({low_angle * 57.29577951308232:.2f}, "  # Convert to degrees
+                reason += f"{high_angle * 57.29577951308232:.2f} deg). "
+                reason += f"Errors at bracket: f(low)={f_low:.2f}, f(high)={f_high:.2f}"
+                raise ZeroFindingError(float(target_y_ft), 0, _new_rad(<double>shot_props_ptr[0].barrel_elevation), reason=reason)
 
-        for iteration in range(<int>self._config_s.cMaxIterations):
-            mid_angle = (low_angle + high_angle) / 2.0
-            f_mid = self._error_at_distance(shot_props_ptr, mid_angle, target_x_ft, target_y_ft)
+            # 4. Ridder's method implementation
+            for iteration in range(<int>self._config_s.cMaxIterations):
+                mid_angle = (low_angle + high_angle) / 2.0
+                f_mid = self._error_at_distance(shot_props_ptr, mid_angle, target_x_ft, target_y_ft)
 
-            # s is the updated point using the root of the linear function through (low_angle, f_low) and (high_angle, f_high)
-            # and the quadratic function that passes through those points and (mid_angle, f_mid)
-            s = sqrt(f_mid * f_mid - f_low * f_high)
-            if s == 0.0:
-                break  # Should not happen if f_low and f_high have opposite signs
+                # s is the updated point using the root of the linear function through (low_angle, f_low) and (high_angle, f_high)
+                # and the quadratic function that passes through those points and (mid_angle, f_mid)
+                s = sqrt(f_mid * f_mid - f_low * f_high)
+                if s == 0.0:
+                    break  # Should not happen if f_low and f_high have opposite signs
 
-            next_angle = mid_angle + (mid_angle - low_angle) * (copysign(1.0, f_low - f_high) * f_mid / s)
-            if fabs(next_angle - mid_angle) < self._config_s.cZeroFindingAccuracy:
-                return _new_rad(next_angle)
+                next_angle = mid_angle + (mid_angle - low_angle) * (copysign(<double>1.0, f_low - f_high) * f_mid / s)
+                if fabs(next_angle - mid_angle) < self._config_s.cZeroFindingAccuracy:
+                    return _new_rad(next_angle)
 
-            f_next = self._error_at_distance(shot_props_ptr, next_angle, target_x_ft, target_y_ft)
-            # Update the bracket
-            if f_mid * f_next < 0:
-                low_angle, f_low = mid_angle, f_mid
-                high_angle, f_high = next_angle, f_next
-            elif f_low * f_next < 0:
-                high_angle, f_high = next_angle, f_next
-            elif f_high * f_next < 0:
-                low_angle, f_low = next_angle, f_next
-            else:
-                break  # If we are here, something is wrong, the root is not bracketed anymore
+                f_next = self._error_at_distance(shot_props_ptr, next_angle, target_x_ft, target_y_ft)
+                # Update the bracket
+                if f_mid * f_next < 0:
+                    low_angle, f_low = mid_angle, f_mid
+                    high_angle, f_high = next_angle, f_next
+                elif f_low * f_next < 0:
+                    high_angle, f_high = next_angle, f_next
+                elif f_high * f_next < 0:
+                    low_angle, f_low = next_angle, f_next
+                else:
+                    break  # If we are here, something is wrong, the root is not bracketed anymore
 
-            if fabs(high_angle - low_angle) < self._config_s.cZeroFindingAccuracy:
-                return _new_rad((low_angle + high_angle) / 2)
-        
-        raise ZeroFindingError(target_y_ft, <int>self._config_s.cMaxIterations, _new_rad((low_angle + high_angle) / 2),
-                               reason="Ridder's method failed to converge.")
+                if fabs(high_angle - low_angle) < self._config_s.cZeroFindingAccuracy:
+                    return _new_rad((low_angle + high_angle) / 2)
+
+            raise ZeroFindingError(float(target_y_ft), <int>self._config_s.cMaxIterations, _new_rad((low_angle + high_angle) / 2),
+                                   reason="Ridder's method failed to converge.")
+        finally:
+            if has_restore_cMinimumVelocity__zero:
+                self._config_s.cMinimumVelocity = restore_cMinimumVelocity__zero
 
     cdef tuple _find_max_range(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, tuple angle_bracket_deg = (0, 90)):
         """
@@ -606,7 +629,7 @@ cdef class CythonizedBaseIntegrationEngine:
         
         return (_new_feet(max_range_ft), _new_rad(angle_at_max_rad))
 
-    cdef object _find_apex(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr):
+    cdef BaseTrajDataT _find_apex(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr):
         """
         Internal implementation to find the apex of the trajectory.
         """
@@ -617,18 +640,20 @@ cdef class CythonizedBaseIntegrationEngine:
         cdef:
             double restore_min_velocity = <double>0.0
             int has_restore_min_velocity = 0
-            object result, apex
-        
+            object result
+            BaseTrajDataT apex
+
         if self._config_s.cMinimumVelocity > <double>0.0:
             restore_min_velocity = self._config_s.cMinimumVelocity
             self._config_s.cMinimumVelocity = <double>0.0
             has_restore_min_velocity = 1
         
-        result = self._integrate(shot_props_ptr, <double>9e9, <double>9e9, <double>0.0, <int>TrajFlag_t.APEX)
-        apex = result[0].get_at('velocity.y', 0.0)
-        
-        if has_restore_min_velocity:
-            self._config_s.cMinimumVelocity = restore_min_velocity
+        try:
+            result = self._integrate(shot_props_ptr, <double>9e9, <double>9e9, <double>0.0, <int>TrajFlag_t.APEX)
+            apex = result[0].get_at('velocity.y', 0.0)
+        finally:
+            if has_restore_min_velocity:
+                self._config_s.cMinimumVelocity = restore_min_velocity
         
         if not apex:
             raise SolverRuntimeError("No apex flagged in trajectory data")
