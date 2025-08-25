@@ -64,6 +64,12 @@ from py_ballisticcalc.unit import (Angular, Distance, Energy, Pressure, Temperat
                                    GenericDimension, Unit, PreferredUnits
 )
 from py_ballisticcalc.vector import Vector
+from py_ballisticcalc.interpolation import (
+    InterpolationMethod,
+    InterpolationMethodEnum,
+    interpolate_3_pt,
+    interpolate_2_pt,
+)
 
 if typing.TYPE_CHECKING:
     from pandas import DataFrame
@@ -194,50 +200,7 @@ class TrajFlag(int):
         return "|".join(parts) if parts else "UNKNOWN"
 
 
-def lagrange_quadratic(x, x0, y0, x1, y1, x2, y2) -> float:
-    """Perform quadratic Lagrange interpolation for a given x value.
-    
-    Computes the interpolated y value at position x using three known points
-    (x0,y0), (x1,y1), (x2,y2) with Lagrange quadratic interpolation.
-    
-    Args:
-        x: The x-coordinate where interpolation is desired.
-        x0, y0: First known point values.
-        x1, y1: Second known point values.
-        x2, y2: Third known point values.
-
-    Returns:
-        The interpolated y-value at x.
-        
-    Raises:
-        ZeroDivisionError: If any two x-coordinates are identical.
-            
-    Examples:
-        ```python
-        # Interpolate trajectory height given three known trajectory points:
-        x0, y0 = 400.0, 2.5   # 400m: 2.5m height
-        x1, y1 = 500.0, 2.0   # 500m: 2.0m height  
-        x2, y2 = 600.0, 1.2   # 600m: 1.2m height
-        
-        # Interpolate height at 550m
-        height_at_550 = lagrange_quadratic(550.0, x0, y0, x1, y1, x2, y2)
-        
-        # Time-based interpolation
-        t0, v0 = 1.0, 800.0  # 1.0s: 800 m/s
-        t1, v1 = 1.5, 790.0  # 1.5s: 790 m/s
-        t2, v2 = 2.0, 780.0  # 2.0s: 780 m/s
-        velocity_at_1_75 = lagrange_quadratic(1.75, t0, v0, t1, v1, t2, v2)
-        ```
-        
-    Note:
-        The interpolation is order-independent: any permutation of the three
-        points will yield the same result. The method works best when the
-        target x value lies within or near the range of the input points.
-    """
-    L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2))
-    L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2))
-    L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1))
-    return y0 * L0 + y1 * L1 + y2 * L2
+# Interpolation helpers moved to py_ballisticcalc.interpolation
 
 
 class CurvePoint(NamedTuple):
@@ -293,14 +256,16 @@ class BaseTrajData(NamedTuple):
 
     @staticmethod
     def interpolate(key_attribute: str, key_value: float,
-                    p0: "BaseTrajData", p1: "BaseTrajData", p2: "BaseTrajData") -> "BaseTrajData":
+                    p0: "BaseTrajData", p1: "BaseTrajData", p2: "BaseTrajData",
+                    method: InterpolationMethod = "pchip") -> "BaseTrajData":
         """
-        Quadratic (Lagrange) interpolation of a BaseTrajData point.
+        Interpolate a BaseTrajData point using monotone PCHIP (default) or linear.
 
         Args:
             key_attribute (str): Can be 'time', 'mach', or a vector component like 'position.x' or 'velocity.z'.
-            key_value (float): The value to interpolate.
-            p0, p1, p2 (BaseTrajData): Any three points surrounding the point where key_attribute==value.
+            key_value (float): The value to interpolate for.
+            p0, p1, p2 (BaseTrajData): Three points surrounding the key_value.
+            method (str): 'pchip' (default, monotone cubic Hermite) or 'linear'.
 
         Returns:
             BaseTrajData: The interpolated data point.
@@ -309,6 +274,7 @@ class BaseTrajData(NamedTuple):
             AttributeError: If the key_attribute is not a member of BaseTrajData.
             ZeroDivisionError: If the interpolation fails due to zero division.
                                (This will result if two of the points are identical).
+            ValueError: If method is not one of 'pchip' or 'linear'.
         """
         def get_key_val(td: "BaseTrajData", path: str) -> float:
             """Helper to get the key value from a BaseTrajData point."""
@@ -324,7 +290,17 @@ class BaseTrajData(NamedTuple):
         x1 = get_key_val(p1, key_attribute)
         x2 = get_key_val(p2, key_attribute)
         def _interp_scalar(y0, y1, y2):
-            return lagrange_quadratic(key_value, x0, y0, x1, y1, x2, y2)
+            if method == "pchip":
+                return interpolate_3_pt(key_value, x0, y0, x1, y1, x2, y2)
+            elif method == "linear":
+                pts = sorted(((x0, y0), (x1, y1), (x2, y2)), key=lambda p: p[0])
+                (sx0, sy0), (sx1, sy1), (sx2, sy2) = pts
+                if key_value <= sx1:
+                    return interpolate_2_pt(key_value, sx0, sy0, sx1, sy1)
+                else:
+                    return interpolate_2_pt(key_value, sx1, sy1, sx2, sy2)
+            else:
+                raise ValueError("method must be 'pchip' or 'linear'")
 
         time = _interp_scalar(p0.time, p1.time, p2.time) if key_attribute != 'time' else key_value
         px = _interp_scalar(p0.position.x, p1.position.x, p2.position.x)
@@ -515,25 +491,27 @@ class TrajectoryData(NamedTuple):
     @staticmethod
     def interpolate(key_attribute: TRAJECTORY_DATA_ATTRIBUTES, value: Union[float, GenericDimension],
                     p0: "TrajectoryData", p1: "TrajectoryData", p2: "TrajectoryData",
-                    flag: Union[TrajFlag, int]=TrajFlag.NONE) -> "TrajectoryData":
+                    flag: Union[TrajFlag, int]=TrajFlag.NONE,
+                    method: InterpolationMethod = "pchip") -> "TrajectoryData":
         """
-        Quadratic interpolation for TrajectoryData where key_attribute==value.
+        Interpolate TrajectoryData where key_attribute==value using PCHIP (default) or linear.
 
         Args:
-            key_attribute (str): The name of the TrajectoryData attribute to key on (e.g., 'time', 'distance').
-            value (Union[float, GenericDimension]): The value of the key attribute to find. If a float is provided
-                                                    for a dimensioned attribute, it's assumed to be a .raw_value.
-            p0, p1, p2 (TrajectoryData): Any three points surrounding the point where key_attribute==value.
-            flag (Optional[Union[TrajFlag, int]]): The flag to assign to the new TrajectoryData point.
+            key_attribute (str): Attribute to key on (e.g., 'time', 'distance').
+            value (Union[float, GenericDimension]): Target value for the key attribute. A bare float is treated as
+                                                    raw value for dimensioned fields.
+            p0, p1, p2 (TrajectoryData): Three points surrounding the target.
+            flag (Union[TrajFlag, int]): Flag to assign to the new point.
+            method (str): 'pchip' (monotone cubic Hermite) or 'linear'.
 
         Returns:
-            TrajectoryData: (where key_attribute==value)
+            TrajectoryData: Interpolated point with key_attribute==value.
 
         Raises:
             AttributeError: If TrajectoryData doesn't have the specified attribute.
             KeyError: If the key_attribute is 'flag'.
-            ZeroDivisionError: If the interpolation fails due to zero division.
-                               (This will result if two of the points are identical).
+            ZeroDivisionError: If interpolation fails due to zero division.
+            ValueError: If method is not one of 'pchip' or 'linear'.
         """
         key_attribute = TRAJECTORY_DATA_SYNONYMS.get(key_attribute, key_attribute)  # Resolve synonyms
         if not hasattr(TrajectoryData, key_attribute):
@@ -576,13 +554,21 @@ class TrajectoryData(NamedTuple):
 
             if isinstance(y0_val, GenericDimension):
                 y0, y1, y2 = y0_val.raw_value, y1_val.raw_value, y2_val.raw_value
-                interpolated_raw = lagrange_quadratic(x_val, x0, y0, x1, y1, x2, y2)
+                if method == "pchip":
+                    interpolated_raw = interpolate_3_pt(x_val, x0, y0, x1, y1, x2, y2)
+                elif method == "linear":
+                    interpolated_raw = interpolate_2_pt(x_val, x0, y0, x1, y1) if x_val <= x1 else interpolate_2_pt(x_val, x1, y1, x2, y2)
+                else:
+                    raise ValueError("method must be 'pchip' or 'linear'")
                 interpolated_fields[field_name] = type(y0_val).new_from_raw(interpolated_raw, y0_val.units)
             elif isinstance(y0_val, (float, int)):
-                interpolated_fields[field_name] = lagrange_quadratic(x_val, x0, float(y0_val),
-                                                                            x1, float(y1_val),
-                                                                            x2, float(y2_val)
-                )
+                fy0, fy1, fy2 = float(y0_val), float(y1_val), float(y2_val)
+                if method == "pchip":
+                    interpolated_fields[field_name] = interpolate_3_pt(x_val, x0, fy0, x1, fy1, x2, fy2)
+                elif method == "linear":
+                    interpolated_fields[field_name] = interpolate_2_pt(x_val, x0, fy0, x1, fy1) if x_val <= x1 else interpolate_2_pt(x_val, x1, fy1, x2, fy2)
+                else:
+                    raise ValueError("method must be 'pchip' or 'linear'")
             else:
                 raise TypeError(f"Cannot interpolate field '{field_name}' of type {type(y0_val)}")
 
