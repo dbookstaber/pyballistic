@@ -2,13 +2,14 @@
 Low-level, high-performance trajectory buffer and interpolation helpers (Cython).
 
 This module provides:
-    - CBaseTrajSeq: a contiguous C buffer of BaseTrajC items with append/reserve access.
-    - Quadratic Lagrange interpolation on the raw buffer without allocating Python objects.
-    - Convenience methods to locate and interpolate a point by an independent variable
-        (time, mach, position.{x,y,z}, velocity.{x,y,z}) and slant_height.
+        - CBaseTrajSeq: a contiguous C buffer of BaseTrajC items with append/reserve access.
+        - Monotone-preserving PCHIP (cubic Hermite) interpolation on the raw buffer without
+            allocating Python objects.
+        - Convenience methods to locate and interpolate a point by an independent variable
+            (time, mach, position.{x,y,z}, velocity.{x,y,z}) and slant_height.
 
 Design note: nogil helpers operate on a tiny C struct view of the sequence to avoid
-    passing Python cdef-class instances into nogil code paths.
+passing Python cdef-class instances into nogil code paths.
 """
 
 from libc.stdlib cimport realloc
@@ -18,6 +19,7 @@ from libc.string cimport memcpy
 from cpython.mem cimport PyMem_Malloc, PyMem_Free
 from py_ballisticcalc_exts.trajectory_data cimport BaseTrajDataT, BaseTrajDataT_create
 from py_ballisticcalc_exts.v3d cimport V3dT
+from py_ballisticcalc_exts.trajectory_data cimport _sort3, _pchip_slopes3, _hermite
 
 cdef extern from "include/basetraj_seq.h" nogil:
     ctypedef struct BaseTrajC:
@@ -69,13 +71,22 @@ cdef inline double _key_val_from_kind_buf(BaseTrajC* p, int key_kind) noexcept n
 
 # Interpolation helper (pure C math; safe to call with or without GIL)
 cdef int _interpolate_nogil_raw(_CBaseTrajSeq_cview* seq, Py_ssize_t idx, int key_kind, double key_value, BaseTrajC* out) noexcept nogil:
-    """Interpolate at idx using points (idx-1, idx, idx+1), computing new BaseTrajC where out.key_kind==key_value."""
+    """Interpolate at idx using points (idx-1, idx, idx+1) where key equals key_value.
+
+    Uses monotone-preserving PCHIP with Hermite evaluation; returns 1 on success, 0 on failure.
+    """
     cdef BaseTrajC* buffer = seq._buffer
     cdef Py_ssize_t plength = <Py_ssize_t> seq._length
     cdef BaseTrajC *p0
     cdef BaseTrajC *p1
     cdef BaseTrajC *p2
-    cdef double x0, x1, x2
+    cdef double ox[3]
+    cdef double xs[3]
+    cdef double ys[3]
+    cdef double m0 = 0.0
+    cdef double m1 = 0.0
+    cdef double m2 = 0.0
+    cdef double x = key_value
     cdef double time, px, py, pz, vx, vy, vz, mach
 
     if idx < 0:
@@ -88,53 +99,104 @@ cdef int _interpolate_nogil_raw(_CBaseTrajSeq_cview* seq, Py_ssize_t idx, int ke
     p2 = <BaseTrajC*>((<char*>buffer) + <size_t>(idx + 1) * sizeof(BaseTrajC))
 
     if key_kind == <int>KEY_TIME:
-        x0 = p0.time; x1 = p1.time; x2 = p2.time
+        ox[0] = p0.time; ox[1] = p1.time; ox[2] = p2.time
     elif key_kind == <int>KEY_MACH:
-        x0 = p0.mach; x1 = p1.mach; x2 = p2.mach
+        ox[0] = p0.mach; ox[1] = p1.mach; ox[2] = p2.mach
     elif key_kind == <int>KEY_POS_X:
-        x0 = p0.px; x1 = p1.px; x2 = p2.px
+        ox[0] = p0.px; ox[1] = p1.px; ox[2] = p2.px
     elif key_kind == <int>KEY_POS_Y:
-        x0 = p0.py; x1 = p1.py; x2 = p2.py
+        ox[0] = p0.py; ox[1] = p1.py; ox[2] = p2.py
     elif key_kind == <int>KEY_POS_Z:
-        x0 = p0.pz; x1 = p1.pz; x2 = p2.pz
+        ox[0] = p0.pz; ox[1] = p1.pz; ox[2] = p2.pz
     elif key_kind == <int>KEY_VEL_X:
-        x0 = p0.vx; x1 = p1.vx; x2 = p2.vx
+        ox[0] = p0.vx; ox[1] = p1.vx; ox[2] = p2.vx
     elif key_kind == <int>KEY_VEL_Y:
-        x0 = p0.vy; x1 = p1.vy; x2 = p2.vy
+        ox[0] = p0.vy; ox[1] = p1.vy; ox[2] = p2.vy
     elif key_kind == <int>KEY_VEL_Z:
-        x0 = p0.vz; x1 = p1.vz; x2 = p2.vz
+        ox[0] = p0.vz; ox[1] = p1.vz; ox[2] = p2.vz
     else:
         return 0
 
-    cdef double L0, L1, L2, denom0, denom1, denom2, x
-    x = key_value
-
-    denom0 = (x0 - x1) * (x0 - x2)
-    denom1 = (x1 - x0) * (x1 - x2)
-    denom2 = (x2 - x0) * (x2 - x1)
-    if denom0 == 0.0 or denom1 == 0.0 or denom2 == 0.0:
+    if ox[0] == ox[1] or ox[0] == ox[2] or ox[1] == ox[2]:
         return 0
 
-    L0 = ((x - x1) * (x - x2)) / denom0
-    L1 = ((x - x0) * (x - x2)) / denom1
-    L2 = ((x - x0) * (x - x1)) / denom2
-
-    if key_kind != <int>KEY_TIME:
-        time = p0.time * L0 + p1.time * L1 + p2.time * L2
-    else:
+    if key_kind == <int>KEY_TIME:
         time = x
-
-    px = p0.px * L0 + p1.px * L1 + p2.px * L2
-    py = p0.py * L0 + p1.py * L1 + p2.py * L2
-    pz = p0.pz * L0 + p1.pz * L1 + p2.pz * L2
-    vx = p0.vx * L0 + p1.vx * L1 + p2.vx * L2
-    vy = p0.vy * L0 + p1.vy * L1 + p2.vy * L2
-    vz = p0.vz * L0 + p1.vz * L1 + p2.vz * L2
-
-    if key_kind != <int>KEY_MACH:
-        mach = p0.mach * L0 + p1.mach * L1 + p2.mach * L2
     else:
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.time; ys[1] = p1.time; ys[2] = p2.time
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if x <= xs[1]:
+            time = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            time = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+    ys[0] = p0.px; ys[1] = p1.px; ys[2] = p2.px
+    _sort3(&xs[0], &ys[0])
+    _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+    if x <= xs[1]:
+        px = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+    else:
+        px = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+    ys[0] = p0.py; ys[1] = p1.py; ys[2] = p2.py
+    _sort3(&xs[0], &ys[0])
+    _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+    if x <= xs[1]:
+        py = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+    else:
+        py = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+    ys[0] = p0.pz; ys[1] = p1.pz; ys[2] = p2.pz
+    _sort3(&xs[0], &ys[0])
+    _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+    if x <= xs[1]:
+        pz = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+    else:
+        pz = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+    ys[0] = p0.vx; ys[1] = p1.vx; ys[2] = p2.vx
+    _sort3(&xs[0], &ys[0])
+    _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+    if x <= xs[1]:
+        vx = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+    else:
+        vx = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+    ys[0] = p0.vy; ys[1] = p1.vy; ys[2] = p2.vy
+    _sort3(&xs[0], &ys[0])
+    _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+    if x <= xs[1]:
+        vy = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+    else:
+        vy = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+    ys[0] = p0.vz; ys[1] = p1.vz; ys[2] = p2.vz
+    _sort3(&xs[0], &ys[0])
+    _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+    if x <= xs[1]:
+        vz = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+    else:
+        vz = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+    if key_kind == <int>KEY_MACH:
         mach = x
+    else:
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.mach; ys[1] = p1.mach; ys[2] = p2.mach
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if x <= xs[1]:
+            mach = _hermite(x, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            mach = _hermite(x, xs[1], xs[2], ys[1], ys[2], m1, m2)
 
     out.time = time
     out.px = px; out.py = py; out.pz = pz
@@ -352,7 +414,7 @@ cdef class CBaseTrajSeq:
         return self._interpolate_at_c(idx, key_attribute, key_value)
 
     def get_at(self, str key_attribute, double key_value, start_from_time=None):
-        """Get BaseTrajDataT where key_attribute == key_value (via quadratic interpolation).
+        """Get BaseTrajDataT where key_attribute == key_value (via monotone PCHIP interpolation).
 
         If start_from_time > 0, search is centered from the first point where time >= start_from_time,
         and proceeds forward or backward depending on local direction, mirroring
@@ -466,30 +528,96 @@ cdef class CBaseTrajSeq:
         if n < 3:
             raise ValueError("Interpolation requires at least 3 points")
         cdef Py_ssize_t center = _bisect_center_idx_slant_buf(self._buffer, self._length, ca, sa, value)
-        # Use three consecutive points around center to perform Lagrange interpolation keyed on slant height
+        # Use three consecutive points around center to perform monotone PCHIP interpolation keyed on slant height
         cdef BaseTrajC* buf = self._buffer
         cdef BaseTrajC* p0 = <BaseTrajC*>(<char*>buf + <size_t>(center - 1) * <size_t>sizeof(BaseTrajC))
         cdef BaseTrajC* p1 = <BaseTrajC*>(<char*>buf + <size_t>center * <size_t>sizeof(BaseTrajC))
         cdef BaseTrajC* p2 = <BaseTrajC*>(<char*>buf + <size_t>(center + 1) * <size_t>sizeof(BaseTrajC))
-        cdef double x0 = _slant_val_buf(p0, ca, sa)
-        cdef double x1 = _slant_val_buf(p1, ca, sa)
-        cdef double x2 = _slant_val_buf(p2, ca, sa)
-        cdef double denom0 = (x0 - x1) * (x0 - x2)
-        cdef double denom1 = (x1 - x0) * (x1 - x2)
-        cdef double denom2 = (x2 - x0) * (x2 - x1)
-        if denom0 == 0.0 or denom1 == 0.0 or denom2 == 0.0:
-            raise ZeroDivisionError("Degenerate points for interpolation")
-        cdef double L0 = ((value - x1) * (value - x2)) / denom0
-        cdef double L1 = ((value - x0) * (value - x2)) / denom1
-        cdef double L2 = ((value - x0) * (value - x1)) / denom2
+        cdef double ox[3]
+        cdef double xs[3]
+        cdef double ys[3]
+        cdef double m0, m1, m2
         cdef V3dT pos
         cdef V3dT vel
-        cdef double time = p0.time * L0 + p1.time * L1 + p2.time * L2
-        pos.x = p0.px * L0 + p1.px * L1 + p2.px * L2
-        pos.y = p0.py * L0 + p1.py * L1 + p2.py * L2
-        pos.z = p0.pz * L0 + p1.pz * L1 + p2.pz * L2
-        vel.x = p0.vx * L0 + p1.vx * L1 + p2.vx * L2
-        vel.y = p0.vy * L0 + p1.vy * L1 + p2.vy * L2
-        vel.z = p0.vz * L0 + p1.vz * L1 + p2.vz * L2
-        cdef double mach = p0.mach * L0 + p1.mach * L1 + p2.mach * L2
+        cdef double time
+        cdef double mach
+
+        ox[0] = _slant_val_buf(p0, ca, sa)
+        ox[1] = _slant_val_buf(p1, ca, sa)
+        ox[2] = _slant_val_buf(p2, ca, sa)
+        if ox[0] == ox[1] or ox[0] == ox[2] or ox[1] == ox[2]:
+            raise ZeroDivisionError("Duplicate x for interpolation")
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.time; ys[1] = p1.time; ys[2] = p2.time
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            time = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            time = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.px; ys[1] = p1.px; ys[2] = p2.px
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            pos.x = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            pos.x = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.py; ys[1] = p1.py; ys[2] = p2.py
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            pos.y = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            pos.y = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.pz; ys[1] = p1.pz; ys[2] = p2.pz
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            pos.z = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            pos.z = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.vx; ys[1] = p1.vx; ys[2] = p2.vx
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            vel.x = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            vel.x = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.vy; ys[1] = p1.vy; ys[2] = p2.vy
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            vel.y = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            vel.y = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.vz; ys[1] = p1.vz; ys[2] = p2.vz
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            vel.z = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            vel.z = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
+        xs[0] = ox[0]; xs[1] = ox[1]; xs[2] = ox[2]
+        ys[0] = p0.mach; ys[1] = p1.mach; ys[2] = p2.mach
+        _sort3(&xs[0], &ys[0])
+        _pchip_slopes3(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], &m0, &m1, &m2)
+        if value <= xs[1]:
+            mach = _hermite(value, xs[0], xs[1], ys[0], ys[1], m0, m1)
+        else:
+            mach = _hermite(value, xs[1], xs[2], ys[1], ys[2], m1, m2)
+
         return BaseTrajDataT_create(time, pos, vel, mach)

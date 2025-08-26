@@ -23,8 +23,15 @@ cdef extern from "include/bclib.h":
         V3dT velocity
         double mach
 
-# Ensure signature places 'nogil' at the end to match Cython's recommendation
-cdef double lagrange_quadratic(double x, double x0, double y0, double x1, double y1, double x2, double y2) except -1.0 nogil
+# Expose new interpolation helpers for tests and reuse across modules
+cpdef double interpolate_3_pt(double x, double x0, double y0, double x1, double y1, double x2, double y2)
+cpdef double interpolate_2_pt(double x, double x0, double y0, double x1, double y1)
+
+# Internal nogil helpers for PCHIP used by base_traj_seq
+cdef void _sort3(double* xs, double* ys) noexcept nogil
+cdef void _pchip_slopes3(double x0, double y0, double x1, double y1, double x2, double y2,
+                         double* m0, double* m1, double* m2) noexcept nogil
+cdef double _hermite(double x, double xk, double xk1, double yk, double yk1, double mk, double mk1) noexcept nogil
 
 cdef class BaseTrajDataT:
     cdef:
