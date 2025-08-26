@@ -138,15 +138,14 @@ class VelocityVerletIntegrationEngine(BaseIntegrationEngine[BaseEngineConfigDict
         Creates HitResult for the specified shot.
 
         Args:
-            props (Shot): Information specific to the shot.
-            range_limit_ft (float): Feet down-range to stop calculation.
-            range_step_ft (float): Frequency (in feet down-range) to record TrajectoryData.
-            filter_flags (Union[TrajFlag, int]): Bitfield for trajectory points of interest to record.
-            time_step (float, optional): If > 0 then record TrajectoryData after this many seconds elapse
+            props: Information specific to the shot.
+            range_limit_ft: Feet down-range to stop calculation.
+            range_step_ft: Frequency (in feet down-range) to record TrajectoryData.
+            filter_flags: Bitfield for trajectory points of interest to record.
+            time_step: If > 0 then record TrajectoryData after this many seconds elapse
                 since last record, as could happen when trajectory is nearly vertical and there is too little
                 movement down-range to trigger a record based on range.  (Defaults to 0.0)
-            dense_output (bool, optional): If True, HitResult will save BaseTrajData at each integration step,
-                for interpolating TrajectoryData.
+            dense_output: If True, HitResult will save BaseTrajData at each integration step.
 
         Returns:
             HitResult: Object describing the trajectory.

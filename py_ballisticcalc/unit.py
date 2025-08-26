@@ -359,13 +359,13 @@ class Unit(IntEnum):
         The underlying numeric values are handled as raw values of the given unit.
 
         Args:
-            self (Unit): The unit to apply to each generated numeric value (e.g., `Unit.Meter`, `Unit.Second`).
-            start (int | float): The starting raw value for the sequence. Defaults to 0.
-            step (int | float): The increment/decrement step for the sequence.
+            self: The unit to apply to each generated numeric value (e.g., `Unit.Meter`, `Unit.Second`).
+            start: The starting raw value for the sequence. Defaults to 0.
+            step: The increment/decrement step for the sequence.
                                 Must not be 0 for an infinite sequence. Defaults to 0.
-            end (int | float, optional): The raw value at which the sequence should stop (exclusive by default).
+            end: The raw value at which the sequence should stop (exclusive by default).
                                          If `None`, the sequence is infinite. Defaults to `None`.
-            include_end (bool): If `True` and `end` is provided, the `end` value will be
+            include_end: If `True` and `end` is provided, the `end` value will be
                                 included in the sequence. Defaults to `True`.
 
         Yields:
@@ -407,11 +407,10 @@ class Unit(IntEnum):
         """Creates a sorted sequence of `GenericDimension` objects from raw numeric values.
 
         Args:
-            self (Unit): The unit to apply to each numeric value (e.g., `Unit.Meter`, `Unit.FPS`).
-            items (Sequence[int | float]): A sequence of raw numeric values (integers or floats).
-            sort: (bool): If set to `True`, the elements will be sorted before yield.
-            reverse (bool): If set to `True`, the elements are sorted in descending order.
-                            Defaults to `False`.
+            self: The unit to apply to each numeric value (e.g., `Unit.Meter`, `Unit.FPS`).
+            items: A sequence of raw numeric values (integers or floats).
+            sort: If set to `True`, the elements will be sorted before yield.
+            reverse: If set to `True`, the elements are sorted in descending order. Defaults to `False`.
 
         Yields:
             _GenericDimensionType: A `GenericDimension` object of the specific type implied by `u`, in sorted order.

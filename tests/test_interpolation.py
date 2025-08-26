@@ -12,6 +12,7 @@ from py_ballisticcalc.vector import Vector
 def make_base(t: float, pos: float, vel: float, mach: float) -> BaseTrajData:
     return BaseTrajData(time=t, position=Vector(pos, 0.0, 0.0), velocity=Vector(vel, 0.0, 0.0), mach=mach)
 
+
 class TestInterpolationBasic:
     def test_pchip_monotone_preserves_shape_scalar(self):
         x0, x1, x2 = 0.0, 1.0, 2.0
@@ -159,9 +160,11 @@ class TestInterpolationEdge:
 
 
 class TestTrajectoryDataInterpolation:
-    def test_trajdata_interpolate_dimensioned_fields_linear_vs_pchip(self):
-        # Create three rows with monotone increasing distance/height and varying velocity
-        p0 = TrajectoryData(
+    
+    @staticmethod
+    def TD(**overrides) -> TrajectoryData:
+        # Default builder for TrajectoryData with sensible baseline values.
+        base = dict(
             time=0.0,
             distance=Distance.Foot(0.0),
             velocity=Velocity.FPS(1000.0),
@@ -179,7 +182,28 @@ class TestTrajectoryDataInterpolation:
             ogw=Weight.Pound(0.0),
             flag=0,
         )
-        p1 = TrajectoryData(
+        base.update(overrides)
+        return TrajectoryData(**base)  # type: ignore[arg-type]
+
+    @staticmethod
+    def chord(x: float, x0: float, y0: float, x1: float, y1: float) -> float:
+        return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+
+    @staticmethod
+    def assert_between(value: float, a: float, b: float, eps: float = 1e-12) -> None:
+        lo, hi = (a, b) if a <= b else (b, a)
+        assert lo - eps <= value <= hi + eps
+
+    @staticmethod
+    def assert_units_match(result: TrajectoryData, proto: TrajectoryData, fields):
+        for f in fields:
+            assert getattr(result, f).units == getattr(proto, f).units
+
+
+    def test_trajdata_interpolate_dimensioned_fields_linear_vs_pchip(self):
+        # Create three rows with monotone increasing distance/height and varying velocity
+        p0 = TD()
+        p1 = TD(
             time=1.0,
             distance=Distance.Foot(100.0),
             velocity=Velocity.FPS(900.0),
@@ -187,17 +211,11 @@ class TestTrajectoryDataInterpolation:
             height=Distance.Foot(10.0),
             slant_height=Distance.Foot(10.0),
             drop_adj=Angular.Radian(0.01),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
             slant_distance=Distance.Foot(100.0),
-            angle=Angular.Radian(0.0),
             density_ratio=0.99,
             drag=0.1,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
-        p2 = TrajectoryData(
+        p2 = TD(
             time=2.0,
             distance=Distance.Foot(250.0),
             velocity=Velocity.FPS(800.0),
@@ -205,15 +223,9 @@ class TestTrajectoryDataInterpolation:
             height=Distance.Foot(25.0),
             slant_height=Distance.Foot(25.0),
             drop_adj=Angular.Radian(0.02),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
             slant_distance=Distance.Foot(250.0),
-            angle=Angular.Radian(0.0),
             density_ratio=0.98,
             drag=0.2,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
 
         # Interpolate by time at t=1.5
@@ -222,18 +234,15 @@ class TestTrajectoryDataInterpolation:
         r_p = TrajectoryData.interpolate('time', t, p0, p1, p2, method='pchip')
 
         # Distance and height are dimensioned; verify linear raw math and PCHIP stay within envelope
-        d0, d1, d2 = p0.distance.raw_value, p1.distance.raw_value, p2.distance.raw_value
-        h0, h1, h2 = p0.height.raw_value, p1.height.raw_value, p2.height.raw_value
+        d1, d2 = p1.distance.raw_value, p2.distance.raw_value
+        h1, h2 = p1.height.raw_value, p2.height.raw_value
         # Linear should equal two-point segment calculation (between p1 and p2)
-        def lin(x, x0, y0, x1, y1):
-            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
-
-        assert abs(r_lin.distance.raw_value - lin(t, 1.0, d1, 2.0, d2)) < 1e-12
-        assert abs(r_lin.height.raw_value - lin(t, 1.0, h1, 2.0, h2)) < 1e-12
+        assert abs(r_lin.distance.raw_value - chord(t, 1.0, d1, 2.0, d2)) < 1e-12
+        assert abs(r_lin.height.raw_value - chord(t, 1.0, h1, 2.0, h2)) < 1e-12
 
         # PCHIP should remain within local bounds
-        assert min(d1, d2) - 1e-12 <= r_p.distance.raw_value <= max(d1, d2) + 1e-12
-        assert min(h1, h2) - 1e-12 <= r_p.height.raw_value <= max(h1, h2) + 1e-12
+        assert_between(r_p.distance.raw_value, d1, d2)
+        assert_between(r_p.height.raw_value, h1, h2)
 
         # Interpolating key attributes should set them exactly
         assert r_lin.time == t and r_p.time == t
@@ -241,25 +250,8 @@ class TestTrajectoryDataInterpolation:
 
     def test_trajdata_key_on_dimensioned_field(self):
         # Interpolate keyed by slant_height using raw float (Feet), ensure exact match and sensible interpolation
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p1 = TrajectoryData(
+        p0 = TD()
+        p1 = TD(
             time=1.0,
             distance=Distance.Foot(100.0),
             velocity=Velocity.FPS(900.0),
@@ -267,17 +259,11 @@ class TestTrajectoryDataInterpolation:
             height=Distance.Foot(10.0),
             slant_height=Distance.Foot(10.0),
             drop_adj=Angular.Radian(0.01),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
             slant_distance=Distance.Foot(100.0),
-            angle=Angular.Radian(0.0),
             density_ratio=0.99,
             drag=0.1,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
-        p2 = TrajectoryData(
+        p2 = TD(
             time=2.0,
             distance=Distance.Foot(250.0),
             velocity=Velocity.FPS(800.0),
@@ -285,18 +271,11 @@ class TestTrajectoryDataInterpolation:
             height=Distance.Foot(25.0),
             slant_height=Distance.Foot(25.0),
             drop_adj=Angular.Radian(0.02),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
             slant_distance=Distance.Foot(250.0),
-            angle=Angular.Radian(0.0),
             density_ratio=0.98,
             drag=0.2,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
 
-        # Key on slant_height = 20 ft, pass a dimensioned key so the method reads raw internally
         s = Distance.Foot(20.0)
         r_lin = TrajectoryData.interpolate('slant_height', s, p0, p1, p2, method='linear')
         r_p = TrajectoryData.interpolate('slant_height', s, p0, p1, p2, method='pchip')
@@ -306,34 +285,24 @@ class TestTrajectoryDataInterpolation:
 
         # Spot-check velocity is between neighbors on PCHIP and matches linear chord on linear
         v1, v2 = p1.velocity.raw_value, p2.velocity.raw_value
-        assert min(v1, v2) - 1e-12 <= r_p.velocity.raw_value <= max(v1, v2) + 1e-12
-        # Linear should be on the chord in the right segment (between p1 and p2)
+        assert_between(r_p.velocity.raw_value, v1, v2)
         t1, t2 = p1.slant_height.raw_value, p2.slant_height.raw_value
-        v_lin = v1 + (v2 - v1) * (s.raw_value - t1) / (t2 - t1)
+        v_lin = chord(s.raw_value, t1, v1, t2, v2)
         assert abs(r_lin.velocity.raw_value - v_lin) < 1e-12
 
 
     def test_trajdata_mixed_units_key_and_fields(self):
         # Mix units across points: distances/heights in different units; velocity in different units too
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
+        p0 = TD(
             velocity=Velocity.MPH(681.818),  # ~1000 fps
-            mach=0.3,
             height=Distance.Meter(0.0),
             slant_height=Distance.Meter(0.0),
             drop_adj=Angular.Degree(0.0),
             windage=Distance.Centimeter(0.0),
             windage_adj=Angular.MOA(0.0),
-            slant_distance=Distance.Foot(0.0),
             angle=Angular.Mil(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
-        p1 = TrajectoryData(
+        p1 = TD(
             time=1.0,
             distance=Distance.Yard(100.0/3),  # 100 ft
             velocity=Velocity.MPS(274.32),     # ~900 fps
@@ -347,11 +316,8 @@ class TestTrajectoryDataInterpolation:
             angle=Angular.Radian(0.0),
             density_ratio=0.99,
             drag=0.1,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
-        p2 = TrajectoryData(
+        p2 = TD(
             time=2.0,
             distance=Distance.Meter(76.2),  # 250 ft
             velocity=Velocity.KMH(877.822),  # ~800 fps
@@ -365,18 +331,12 @@ class TestTrajectoryDataInterpolation:
             angle=Angular.Degree(0.0),
             density_ratio=0.98,
             drag=0.2,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
 
-        # Key on slant_height using meters for the key; method should respect raw internally
-        # Choose a key within [p1, p2] to avoid extrapolation in PCHIP checks
         key = Distance.Meter(5.0)
         r_lin = TrajectoryData.interpolate('slant_height', key, p0, p1, p2, method='linear')
         r_p = TrajectoryData.interpolate('slant_height', key, p0, p1, p2, method='pchip')
 
-        # Key field should match exactly (raw inches)
         assert abs(r_lin.slant_height.raw_value - key.raw_value) < 1e-9
         assert abs(r_p.slant_height.raw_value - key.raw_value) < 1e-9
 
@@ -389,8 +349,8 @@ class TestTrajectoryDataInterpolation:
         h_lin = h1 + (h2 - h1) * w
         assert abs(r_lin.distance.raw_value - d_lin) < 1e-9
         assert abs(r_lin.height.raw_value - h_lin) < 1e-9
-        assert min(d1, d2) - 1e-12 <= r_p.distance.raw_value <= max(d1, d2) + 1e-12
-        assert min(h1, h2) - 1e-12 <= r_p.height.raw_value <= max(h1, h2) + 1e-12
+        assert_between(r_p.distance.raw_value, d1, d2)
+        assert_between(r_p.height.raw_value, h1, h2)
 
         # Return units for dimensioned fields should follow p0's units
         assert r_lin.distance.units == p0.distance.units
@@ -403,26 +363,8 @@ class TestTrajectoryDataInterpolation:
 
     def test_trajdata_duplicate_key_raises_in_linear_and_pchip(self):
         # Duplicate slant_height values should cause ZeroDivisionError when selecting segment or slopes
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(10.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        # p1 and p2 share duplicate slant_height
-        p1 = TrajectoryData(
+        p0 = TD(slant_height=Distance.Foot(10.0))
+        p1 = TD(
             time=1.0,
             distance=Distance.Foot(100.0),
             velocity=Velocity.FPS(900.0),
@@ -430,17 +372,11 @@ class TestTrajectoryDataInterpolation:
             height=Distance.Foot(10.0),
             slant_height=Distance.Foot(10.0),
             drop_adj=Angular.Radian(0.01),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
             slant_distance=Distance.Foot(100.0),
-            angle=Angular.Radian(0.0),
             density_ratio=0.99,
             drag=0.1,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
-        p2 = TrajectoryData(
+        p2 = TD(
             time=2.0,
             distance=Distance.Foot(200.0),
             velocity=Velocity.FPS(800.0),
@@ -448,90 +384,25 @@ class TestTrajectoryDataInterpolation:
             height=Distance.Foot(20.0),
             slant_height=Distance.Foot(10.0),
             drop_adj=Angular.Radian(0.02),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
             slant_distance=Distance.Foot(200.0),
-            angle=Angular.Radian(0.0),
             density_ratio=0.98,
             drag=0.2,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
         )
 
         key = Distance.Foot(10.0)
-        # Linear: both segments are degenerate; expect ZeroDivisionError
-        try:
+        with pytest.raises(ZeroDivisionError):
             _ = TrajectoryData.interpolate('slant_height', key, p0, p1, p2, method='linear')
-            assert False, "Expected ZeroDivisionError for duplicate x in linear TrajectoryData.interpolate"
-        except ZeroDivisionError:
-            pass
-        # PCHIP: slope calc should raise
-        try:
+        with pytest.raises(ZeroDivisionError):
             _ = TrajectoryData.interpolate('slant_height', key, p0, p1, p2, method='pchip')
-            assert False, "Expected ZeroDivisionError for duplicate x in PCHIP TrajectoryData.interpolate"
-        except ZeroDivisionError:
-            pass
 
 
     def test_trajdata_endpoint_exact_match_on_dimensioned_key(self):
-        # Exact key on p1 and p2 should return those values for all fields under both methods
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p1 = TrajectoryData(
-            time=1.0,
-            distance=Distance.Foot(100.0),
-            velocity=Velocity.FPS(900.0),
-            mach=0.4,
-            height=Distance.Foot(10.0),
-            slant_height=Distance.Foot(10.0),
-            drop_adj=Angular.Radian(0.01),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(100.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=0.99,
-            drag=0.1,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p2 = TrajectoryData(
-            time=2.0,
-            distance=Distance.Foot(250.0),
-            velocity=Velocity.FPS(800.0),
-            mach=0.5,
-            height=Distance.Foot(25.0),
-            slant_height=Distance.Foot(25.0),
-            drop_adj=Angular.Radian(0.02),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(250.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=0.98,
-            drag=0.2,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
+        p1 = TD(time=1.0, distance=Distance.Foot(100.0), velocity=Velocity.FPS(900.0),
+                height=Distance.Foot(10.0), slant_height=Distance.Foot(10.0))
+        p2 = TD(time=2.0, distance=Distance.Foot(250.0), velocity=Velocity.FPS(800.0),
+                height=Distance.Foot(25.0), slant_height=Distance.Foot(25.0))
 
-        # Exact match at p1
         for method in ('linear', 'pchip'):
             r = TrajectoryData.interpolate('slant_height', Distance.Foot(10.0), p0, p1, p2, method=method)
             assert r.slant_height.raw_value == p1.slant_height.raw_value
@@ -539,7 +410,6 @@ class TestTrajectoryDataInterpolation:
             assert r.height.raw_value == p1.height.raw_value
             assert r.velocity.raw_value == p1.velocity.raw_value
 
-        # Exact match at p2
         for method in ('linear', 'pchip'):
             r = TrajectoryData.interpolate('slant_height', Distance.Foot(25.0), p0, p1, p2, method=method)
             assert r.slant_height.raw_value == p2.slant_height.raw_value
@@ -550,32 +420,11 @@ class TestTrajectoryDataInterpolation:
 
     def test_trajdata_mixed_units_key_per_point(self):
         # slant_height units differ per point; key in yet another unit
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p1 = p0._replace(time=1.0,
-                        distance=Distance.Foot(100.0),
-                        height=Distance.Foot(10.0),
-                        slant_height=Distance.Centimeter(304.8))  # 10 ft
-        p2 = p0._replace(time=2.0,
-                        distance=Distance.Foot(250.0),
-                        height=Distance.Foot(25.0),
-                        slant_height=Distance.Meter(7.62))  # 25 ft
+        p0 = TD()
+        p1 = p0._replace(time=1.0, distance=Distance.Foot(100.0), height=Distance.Foot(10.0),
+                         slant_height=Distance.Centimeter(304.8))  # 10 ft
+        p2 = p0._replace(time=2.0, distance=Distance.Foot(250.0), height=Distance.Foot(25.0),
+                         slant_height=Distance.Meter(7.62))  # 25 ft
 
         key = Distance.Yard(5.0)  # 15 ft
         r_lin = TrajectoryData.interpolate('slant_height', key, p0, p1, p2, method='linear')
@@ -592,30 +441,13 @@ class TestTrajectoryDataInterpolation:
         h_lin = h1 + (h2 - h1) * w
         assert abs(r_lin.distance.raw_value - d_lin) < 1e-9
         assert abs(r_lin.height.raw_value - h_lin) < 1e-9
-        assert min(d1, d2) - 1e-12 <= r_p.distance.raw_value <= max(d1, d2) + 1e-12
-        assert min(h1, h2) - 1e-12 <= r_p.height.raw_value <= max(h1, h2) + 1e-12
+        assert_between(r_p.distance.raw_value, d1, d2)
+        assert_between(r_p.height.raw_value, h1, h2)
 
 
     def test_trajdata_boundary_at_x1_time_key(self):
         # Continuity at x1 from both sides
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, height=Distance.Foot(20.0))
         eps = 1e-9
@@ -630,24 +462,7 @@ class TestTrajectoryDataInterpolation:
 
 
     def test_trajdata_boundary_at_x1_dimensioned_key(self):
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, slant_height=Distance.Foot(10.0), height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, slant_height=Distance.Foot(25.0), height=Distance.Foot(25.0))
         eps_raw = 1e-6
@@ -663,58 +478,19 @@ class TestTrajectoryDataInterpolation:
 
 
     def test_trajdata_non_monotone_dimensioned_field_no_overshoot(self):
-        # Height has a peak at p1; PCHIP must not overshoot between neighbors
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, height=Distance.Foot(0.0))
-        # Segment [p0,p1]: bounds are y0..y1 (raw inches)
         for t in [0.25, 0.75]:
             y = TrajectoryData.interpolate('time', t, p0, p1, p2, method='pchip').height.raw_value
-            lo, hi = sorted([p0.height.raw_value, p1.height.raw_value])
-            assert lo - 1e-9 <= y <= hi + 1e-9
-        # Segment [p1,p2]: bounds are y1..y2 (raw inches)
+            assert_between(y, p0.height.raw_value, p1.height.raw_value, eps=1e-9)
         for t in [1.25, 1.75]:
             y = TrajectoryData.interpolate('time', t, p0, p1, p2, method='pchip').height.raw_value
-            lo, hi = sorted([p1.height.raw_value, p2.height.raw_value])
-            assert lo - 1e-9 <= y <= hi + 1e-9
+            assert_between(y, p1.height.raw_value, p2.height.raw_value, eps=1e-9)
 
 
     def test_trajdata_exact_match_at_p0_dimensioned_key(self):
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, slant_height=Distance.Foot(10.0), height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, slant_height=Distance.Foot(25.0), height=Distance.Foot(25.0))
         for method in ('linear', 'pchip'):
@@ -724,61 +500,11 @@ class TestTrajectoryDataInterpolation:
 
 
     def test_trajdata_pchip_monotone_decreasing_velocity(self):
-        # Ensure PCHIP preserves monotone decreasing velocity when keyed by time
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1200.0),
-            mach=0.9,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p1 = TrajectoryData(
-            time=1.0,
-            distance=Distance.Foot(100.0),
-            velocity=Velocity.FPS(900.0),
-            mach=0.7,
-            height=Distance.Foot(10.0),
-            slant_height=Distance.Foot(10.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(100.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p2 = TrajectoryData(
-            time=2.0,
-            distance=Distance.Foot(250.0),
-            velocity=Velocity.FPS(700.0),
-            mach=0.6,
-            height=Distance.Foot(25.0),
-            slant_height=Distance.Foot(25.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(250.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD(velocity=Velocity.FPS(1200.0), mach=0.9)
+        p1 = TD(time=1.0, distance=Distance.Foot(100.0), velocity=Velocity.FPS(900.0), mach=0.7,
+                height=Distance.Foot(10.0), slant_height=Distance.Foot(10.0))
+        p2 = TD(time=2.0, distance=Distance.Foot(250.0), velocity=Velocity.FPS(700.0), mach=0.6,
+                height=Distance.Foot(25.0), slant_height=Distance.Foot(25.0))
 
         xs = [0.25, 0.5, 0.75, 1.25, 1.5, 1.75]
         last = None
@@ -791,26 +517,8 @@ class TestTrajectoryDataInterpolation:
 
 
     def test_trajdata_result_units_follow_p0_all_fields(self):
-        # p0 defines result units; p1/p2 use varied units
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
-        p1 = TrajectoryData(
+        p0 = TD()
+        p1 = TD(
             time=1.0,
             distance=Distance.Meter(30.48),
             velocity=Velocity.MPS(300.0),
@@ -828,7 +536,7 @@ class TestTrajectoryDataInterpolation:
             ogw=Weight.Pound(1.0),
             flag=0,
         )
-        p2 = TrajectoryData(
+        p2 = TD(
             time=2.0,
             distance=Distance.Meter(76.2),
             velocity=Velocity.KMH(1000.0),
@@ -851,42 +559,20 @@ class TestTrajectoryDataInterpolation:
         r_p = TrajectoryData.interpolate('time', 1.5, p0, p1, p2, method='pchip')
 
         for r in (r_lin, r_p):
-            assert r.distance.units == p0.distance.units
-            assert r.height.units == p0.height.units
-            assert r.slant_height.units == p0.slant_height.units
-            assert r.velocity.units == p0.velocity.units
-            assert r.windage.units == p0.windage.units
-            assert r.windage_adj.units == p0.windage_adj.units
-            assert r.slant_distance.units == p0.slant_distance.units
-            assert r.angle.units == p0.angle.units
-            assert r.drop_adj.units == p0.drop_adj.units
-            assert r.energy.units == p0.energy.units
-            assert r.ogw.units == p0.ogw.units
+            assert_units_match(
+                r,
+                p0,
+                [
+                    'distance', 'height', 'slant_height', 'velocity', 'windage', 'windage_adj',
+                    'slant_distance', 'angle', 'drop_adj', 'energy', 'ogw',
+                ],
+            )
 
 
     def test_trajdata_colinear_equals_linear(self):
-        # Height is linear in time; PCHIP should match linear results
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, height=Distance.Foot(20.0))
-
         for t in [0.5, 1.0, 1.5]:
             r_lin = TrajectoryData.interpolate('time', t, p0, p1, p2, method='linear')
             r_p = TrajectoryData.interpolate('time', t, p0, p1, p2, method='pchip')
@@ -894,84 +580,32 @@ class TestTrajectoryDataInterpolation:
 
 
     def test_trajdata_small_interval_stability(self):
-        # Very small spacing; ensure no exceptions and values remain sensible
-        p0 = TrajectoryData(
-            time=1.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(1.0),
-            slant_height=Distance.Foot(1.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD(time=1.0, height=Distance.Foot(1.0), slant_height=Distance.Foot(1.0))
         eps = 1e-6
         p1 = p0._replace(time=1.0 + eps, height=Distance.Foot(1.0 + 1e-6))
         p2 = p0._replace(time=1.0 + 2*eps, height=Distance.Foot(1.0 + 2e-6))
-
         for t in [1.0 + 0.5*eps, 1.0 + 1.5*eps]:
             r_lin = TrajectoryData.interpolate('time', t, p0, p1, p2, method='linear')
             r_p = TrajectoryData.interpolate('time', t, p0, p1, p2, method='pchip')
-            # Both near the linear chord due to near-equal spacing/slope
             assert abs(r_lin.height.raw_value - r_p.height.raw_value) < 1e-6
 
 
     def test_trajdata_invalid_method_raises(self):
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, height=Distance.Foot(20.0))
-        try:
-            _ = TrajectoryData.interpolate('time', 0.5, p0, p1, p2, method='spline')
-            assert False, "Expected ValueError for invalid method"
-        except ValueError:
-            pass
+        with pytest.raises(ValueError):
+            _ = TrajectoryData.interpolate('time', 0.5, p0, p1, p2, method='spline')  # type: ignore[arg-type]
 
 
     def test_trajdata_flag_propagation(self):
-        p0 = TrajectoryData(
-            time=0.0,
-            distance=Distance.Foot(0.0),
-            velocity=Velocity.FPS(1000.0),
-            mach=0.3,
-            height=Distance.Foot(0.0),
-            slant_height=Distance.Foot(0.0),
-            drop_adj=Angular.Radian(0.0),
-            windage=Distance.Foot(0.0),
-            windage_adj=Angular.Radian(0.0),
-            slant_distance=Distance.Foot(0.0),
-            angle=Angular.Radian(0.0),
-            density_ratio=1.0,
-            drag=0.0,
-            energy=Energy.FootPound(0.0),
-            ogw=Weight.Pound(0.0),
-            flag=0,
-        )
+        p0 = TD()
         p1 = p0._replace(time=1.0, height=Distance.Foot(10.0))
         p2 = p0._replace(time=2.0, height=Distance.Foot(20.0))
         r = TrajectoryData.interpolate('time', 0.5, p0, p1, p2, flag=123, method='pchip')
         assert r.flag == 123
+
+TD = TestTrajectoryDataInterpolation.TD
+chord = TestTrajectoryDataInterpolation.chord
+assert_between = TestTrajectoryDataInterpolation.assert_between
+assert_units_match = TestTrajectoryDataInterpolation.assert_units_match

@@ -69,7 +69,7 @@ Integration:
     core ballistic calculation workflow.
 """
 # pylint: skip-file
-
+from __future__ import annotations
 # Standard library imports
 import math
 import warnings
@@ -139,7 +139,7 @@ def show_hit_result_plot() -> None:
     pyplot.show()
 
 
-def add_danger_space_overlay(danger_space: DangerSpace, ax: 'Axes', label: Optional[str] = None) -> None:
+def add_danger_space_overlay(danger_space: DangerSpace, ax: Axes, label: Optional[str] = None) -> None:
     """Add danger space visualization overlay to existing trajectory plot.
     
     This function highlights the danger space region on a trajectory plot,
@@ -251,19 +251,19 @@ def add_danger_space_overlay(danger_space: DangerSpace, ax: 'Axes', label: Optio
                 linespacing=1.2, fontsize=PLOT_FONT_SIZE, ha='center', va='top')
 
 
-def add_time_of_flight_axis(ax: 'Axes', hit_result: HitResult, time_precision: int = 1) -> 'Axes':
+def add_time_of_flight_axis(ax: Axes, hit_result: HitResult, time_precision: int = 1) -> Axes:
     """Adds a secondary x-axis to the top of the shot plot, representing the time of flight in seconds.
 
     The ticks on the time axis correspond to the distance ticks at the bottom of the plot, where applicable.
     Time values are formatted according to the specified precision.
 
     Args:
-        ax (Axes): The matplotlib Axes object to which the time of flight axis will be added.
-        hit_result (HitResult): The result object containing shot data, including distances and times.
-        time_precision (int, optional): Number of decimal points to use when formatting time values. Defaults to 1.
+        ax: The matplotlib Axes object to which the time of flight axis will be added.
+        hit_result: The result object containing shot data, including distances and times.
+        time_precision: Number of decimal points to use when formatting time values. Defaults to 1.
 
     Returns:
-        Axes: The original Axes object with the added time of flight axis.
+        The original Axes object with the added time of flight axis.
     """
 
     def time_label_for_distance(distance_in_unit, distance_unit, decimal_point_in_seconds):
@@ -291,15 +291,15 @@ def add_time_of_flight_axis(ax: 'Axes', hit_result: HitResult, time_precision: i
     return ax
 
 
-def trajectory_as_plot(hit_result: HitResult, look_angle: Optional[Angular] = None) -> 'Axes':
+def trajectory_as_plot(hit_result: HitResult, look_angle: Optional[Angular] = None) -> Axes:
     """Plots only trajectory, barrel, and sight lines.
 
     Args:
-        hit_result (HitResult): The result object containing shot trajectory data.
-        look_angle (Optional[Angular]): The look angle for the sight line. If None, uses the one from hit_result.
+        hit_result: The result object containing shot trajectory data.
+        look_angle: The look angle for the sight line. If None, uses the one from hit_result.
 
     Returns:
-        Axes: Matplotlib Axes object with the plotted trajectory, barrel, and sight lines.
+        Matplotlib Axes object with the plotted trajectory, barrel, and sight lines.
 
     Note:
         This function does not plot time axis or velocity profile. For a more comprehensive plot, use `hit_result_as_plot`.
@@ -353,16 +353,16 @@ def trajectory_as_plot(hit_result: HitResult, look_angle: Optional[Angular] = No
     return ax
 
 
-def hit_result_as_plot(hit_result, look_angle: Optional[Angular] = None, show_time_axis: bool = True) -> 'Axes':
+def hit_result_as_plot(hit_result, look_angle: Optional[Angular] = None, show_time_axis: bool = True) -> Axes:
     """Plots trajectory, velocity on secondary axis, barrel and sight lines, and optional time axis.
 
     Args:
-        hit_result (HitResult): The result object containing shot trajectory data.
-        look_angle (Optional[Angular]): The look angle for the sight line. If None, uses the one from hit_result.
-        show_time_axis (bool): Whether to add the time of flight axis to the plot.
+        hit_result: The result object containing shot trajectory data.
+        look_angle: The look angle for the sight line. If None, uses the one from hit_result.
+        show_time_axis: Whether to add the time of flight axis to the plot.
 
     Returns:
-        Axes: Matplotlib Axes object with the plotted trajectory and additional features.
+        Matplotlib Axes object with the plotted trajectory and additional features.
     """
     ax = trajectory_as_plot(hit_result, look_angle)
 

@@ -34,6 +34,7 @@ Typical Usage:
     cos_angle = velocity.mul_by_vector(wind_vector) / (velocity.magnitude() * wind_vector.magnitude())
     ```
 """
+from __future__ import annotations
 
 import math
 from typing import Union, NamedTuple
@@ -116,7 +117,7 @@ class Vector(NamedTuple):
         # return math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
         return math.hypot(self.x, self.y, self.z)
 
-    def mul_by_const(self, a: float) -> 'Vector':
+    def mul_by_const(self, a: float) -> Vector:
         """Multiply vector by a scalar constant.
         
         Args:
@@ -145,7 +146,7 @@ class Vector(NamedTuple):
         """
         return Vector(self.x * a, self.y * a, self.z * a)
 
-    def mul_by_vector(self, b: 'Vector') -> float:
+    def mul_by_vector(self, b: Vector) -> float:
         """Calculate the dot product (scalar product) of two vectors.
         
         Computes the dot product, which represents the projection of one vector
@@ -190,7 +191,7 @@ class Vector(NamedTuple):
         """
         return self.x * b.x + self.y * b.y + self.z * b.z
 
-    def add(self, b: 'Vector') -> 'Vector':
+    def add(self, b: Vector) -> Vector:
         """Add two vectors component-wise.
         
         Args:
@@ -223,7 +224,7 @@ class Vector(NamedTuple):
         """
         return Vector(self.x + b.x, self.y + b.y, self.z + b.z)
 
-    def subtract(self, b: 'Vector') -> 'Vector':
+    def subtract(self, b: Vector) -> Vector:
         """Subtract one vector from another component-wise.
         
         Args:
@@ -256,7 +257,7 @@ class Vector(NamedTuple):
         """
         return Vector(self.x - b.x, self.y - b.y, self.z - b.z)
 
-    def negate(self) -> 'Vector':
+    def negate(self) -> Vector:
         """Create a vector with opposite direction (negative vector).
         
         Returns a new vector with all components negated, effectively creating
@@ -286,7 +287,7 @@ class Vector(NamedTuple):
         """
         return Vector(-self.x, -self.y, -self.z)
 
-    def normalize(self) -> 'Vector':
+    def normalize(self) -> Vector:
         """Create a unit vector pointing in the same direction.
         
         Returns:
@@ -319,7 +320,7 @@ class Vector(NamedTuple):
             return Vector(self.x, self.y, self.z)
         return self.mul_by_const(1.0 / m)
 
-    def __mul__(self, other: Union[int, float, 'Vector']) -> Union[float, 'Vector']:  # type: ignore[override]
+    def __mul__(self, other: Union[int, float, Vector]) -> Union[float, Vector]:  # type: ignore[override]
         """Multiplication operator supporting both scalar and vector multiplication.
         
         Provides overloaded multiplication supporting both scalar multiplication
@@ -360,7 +361,7 @@ class Vector(NamedTuple):
         raise TypeError(other)
 
     # Operator overloads - aliases more efficient than wrappers
-    def __add__(self, other: 'Vector') -> 'Vector':  # type: ignore[override]
+    def __add__(self, other: Vector) -> Vector:  # type: ignore[override]
         """Addition operator for vector addition.
         
         Provides intuitive syntax for vector addition using the + operator.
@@ -387,7 +388,7 @@ class Vector(NamedTuple):
         """
         return self.add(other)
 
-    def __radd__(self, other: 'Vector') -> 'Vector':  # type: ignore[override]
+    def __radd__(self, other: Vector) -> Vector:  # type: ignore[override]
         """Right addition operator for vector addition.
         
         Enables vector addition when this vector is on the right side of
@@ -409,7 +410,7 @@ class Vector(NamedTuple):
         """
         return self.add(other)
 
-    def __iadd__(self, other: 'Vector') -> 'Vector':  # type: ignore[override]
+    def __iadd__(self, other: Vector) -> Vector:  # type: ignore[override]
         """In-place addition operator for vector addition.
         
         Provides += operator support. Since Vector is immutable (NamedTuple),
@@ -430,7 +431,7 @@ class Vector(NamedTuple):
         """
         return self.add(other)
 
-    def __sub__(self, other: 'Vector') -> 'Vector':  # type: ignore[override]
+    def __sub__(self, other: Vector) -> Vector:  # type: ignore[override]
         """Subtraction operator for vector subtraction.
         
         Provides intuitive syntax for vector subtraction using the - operator.
@@ -456,7 +457,7 @@ class Vector(NamedTuple):
         """
         return self.subtract(other)
 
-    def __rsub__(self, other: 'Vector') -> 'Vector':  # type: ignore[override]
+    def __rsub__(self, other: Vector) -> Vector:  # type: ignore[override]
         """Right subtraction operator for vector subtraction.
         
         Enables vector subtraction when this vector is on the right side of
@@ -483,7 +484,7 @@ class Vector(NamedTuple):
         """
         return self.subtract(other)
 
-    def __isub__(self, other: 'Vector') -> 'Vector':  # type: ignore[override]
+    def __isub__(self, other: Vector) -> Vector:  # type: ignore[override]
         """In-place subtraction operator for vector subtraction.
         
         Provides -= operator support. Since Vector is immutable (NamedTuple),
@@ -504,7 +505,7 @@ class Vector(NamedTuple):
         """
         return self.subtract(other)
 
-    def __rmul__(self, other: Union[int, float, 'Vector']) -> Union[float, 'Vector']:  # type: ignore[override]
+    def __rmul__(self, other: Union[int, float, Vector]) -> Union[float, Vector]:  # type: ignore[override]
         """Right multiplication operator for vector operations.
 
         Enables multiplication when this vector is on the right side of the * operator.
@@ -529,7 +530,7 @@ class Vector(NamedTuple):
         """
         return self.__mul__(other)
 
-    def __imul__(self, other: Union[int, float, 'Vector']) -> Union[float, 'Vector']:  # type: ignore[override]
+    def __imul__(self, other: Union[int, float, Vector]) -> Union[float, Vector]:  # type: ignore[override]
         """In-place multiplication operator for vector operations.
         
         Provides *= operator support. Since Vector is immutable (NamedTuple),
@@ -557,7 +558,7 @@ class Vector(NamedTuple):
         """
         return self.__mul__(other)
 
-    def __neg__(self) -> 'Vector':  # type: ignore[override]
+    def __neg__(self) -> Vector:  # type: ignore[override]
         """Unary negation operator for creating opposite vector.
         
         Provides intuitive syntax for vector negation using the unary - operator.

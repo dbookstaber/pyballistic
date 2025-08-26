@@ -1,4 +1,5 @@
 """Classes to define zeroing or current environmental conditions"""
+from __future__ import annotations
 
 import math
 import warnings
@@ -258,7 +259,7 @@ class Atmo:  # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def icao(altitude: Union[float, Distance] = 0, temperature: Optional[Temperature] = None,
-             humidity: float = cStandardHumidity) -> 'Atmo':
+             humidity: float = cStandardHumidity) -> Atmo:
         """Create Atmo instance of standard ICAO atmosphere at given altitude.
         
         Note: This model only valid up to troposphere (~36,000 ft).

@@ -38,7 +38,7 @@ Note:
     All engines inherit from BaseIntegrationEngine and must implement the
     abstract _integrate method for their specific numerical integration approach.
 """
-
+from __future__ import annotations
 import math
 from typing import Sequence
 import warnings
@@ -394,13 +394,13 @@ class _WindSock:
         self.winds: Sequence[Wind] = winds or tuple()
         self.current_index: int = 0
         self.next_range: float = Wind.MAX_DISTANCE_FEET
-        self._last_vector_cache: Union["Vector", None] = None
+        self._last_vector_cache: Union[Vector, None] = None
         self._length = len(self.winds)
 
         # Initialize cache correctly
         self.update_cache()
 
-    def current_vector(self) -> "Vector":
+    def current_vector(self) -> Vector:
         """Returns the current cached wind vector.
 
         Raises:
@@ -423,12 +423,12 @@ class _WindSock:
             self._last_vector_cache = Vector(0.0, 0.0, 0.0)
             self.next_range = Wind.MAX_DISTANCE_FEET
 
-    def vector_for_range(self, next_range: float) -> "Vector":
+    def vector_for_range(self, next_range: float) -> Vector:
         """
         Updates the wind vector if `next_range` surpasses `self.next_range`.
 
         Args:
-            next_range (float): The range to check against the current wind segment.
+            next_range: The range to check against the current wind segment.
 
         Returns:
             Vector: The wind vector for the given range.
@@ -503,7 +503,7 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
         Initializes the class.
 
         Args:
-            _config (BaseEngineConfig): The configuration object.
+            _config: The configuration object.
         """
         self._config: BaseEngineConfig = create_base_engine_config(_config)
         self.gravity_vector: Vector = Vector(.0, self._config.cGravityConstant, .0)
@@ -1004,10 +1004,10 @@ class BaseIntegrationEngine(ABC, EngineProtocol[_BaseEngineConfigDictT]):
             range_limit_ft: Feet down-range to stop calculation.
             range_step_ft: Frequency (in feet down-range) to record TrajectoryData.
             filter_flags: Bitfield for trajectory points of interest to record.
-            time_step (optional): If > 0 then record TrajectoryData after this many seconds elapse
+            time_step: If > 0 then record TrajectoryData after this many seconds elapse
                 since last record, as could happen when trajectory is nearly vertical and there is too little
                 movement down-range to trigger a record based on range.  (Defaults to 0.0)
-            dense_output (optional): If True, HitResult will save BaseTrajData at each integration step,
+            dense_output: If True, HitResult will save BaseTrajData at each integration step,
                 for interpolating TrajectoryData.  Defaults to False.
 
         Returns:

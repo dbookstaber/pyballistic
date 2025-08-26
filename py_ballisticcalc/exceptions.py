@@ -60,6 +60,8 @@ Solver-Related Exceptions:
   - max_range: Maximum achievable range (optional)
   - look_angle: Look angle for the shot (optional)
 """
+from __future__ import annotations
+
 from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -108,7 +110,7 @@ class ZeroFindingError(SolverRuntimeError):
     def __init__(self,
                  zero_finding_error: float,
                  iterations_count: int,
-                 last_barrel_elevation: 'Angular',
+                 last_barrel_elevation: Angular,
                  reason: str = ""):
         """
         Parameters:
@@ -118,7 +120,7 @@ class ZeroFindingError(SolverRuntimeError):
         """
         self.zero_finding_error: float = zero_finding_error
         self.iterations_count: int = iterations_count
-        self.last_barrel_elevation: 'Angular' = last_barrel_elevation
+        self.last_barrel_elevation: Angular = last_barrel_elevation
         self.reason: str = reason
         msg = (f'Vertical error {zero_finding_error} '
                f'feet with {last_barrel_elevation} elevation, '
@@ -137,14 +139,14 @@ class RangeError(SolverRuntimeError):
     - Last distance before the exception occurred
     """
     reason: str
-    incomplete_trajectory: List['TrajectoryData']
-    last_distance: Optional['Distance']
+    incomplete_trajectory: List[TrajectoryData]
+    last_distance: Optional[Distance]
 
     MinimumVelocityReached: str = "Minimum velocity reached"
     MaximumDropReached: str = "Maximum drop reached"
     MinimumAltitudeReached: str = "Minimum altitude reached"
 
-    def __init__(self, reason: str, ranges: List['TrajectoryData']):
+    def __init__(self, reason: str, ranges: List[TrajectoryData]):
         """
         Parameters:
         - reason: The error reason (str)
@@ -173,8 +175,8 @@ class OutOfRangeError(SolverRuntimeError):
     - Optionally, the look-angle
     """
 
-    def __init__(self, requested_distance: 'Distance', max_range: Optional['Distance'] = None,
-                 look_angle: Optional['Angular'] = None,
+    def __init__(self, requested_distance: Distance, max_range: Optional[Distance] = None,
+                 look_angle: Optional[Angular] = None,
                  note: str = ""):
         self.requested_distance = requested_distance
         self.max_range = max_range

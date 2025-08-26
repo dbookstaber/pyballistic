@@ -92,7 +92,7 @@ mypy
 pytest
 
 # Run automated tests for specific engine
-pytest --engine="RKBallistic"  # via libraty name
+pytest --engine="cythonized_rk4_engine"  # via project.entry-points
 pytest --engine="my_lib.my_engine:MyEngineClass"  # via entry point path 
 ```
 

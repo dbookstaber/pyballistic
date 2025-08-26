@@ -9,13 +9,10 @@ This module mirrors a subset of the Python API in py_ballisticcalc.trajectory_da
 Primary producer/consumer is the Cython engines which operate on a dense C buffer
 and convert to these types as needed for interpolation or presentation.
 """
-# noinspection PyUnresolvedReferences
 from cython cimport final
 from py_ballisticcalc_exts.v3d cimport V3dT, set
 from py_ballisticcalc_exts.trajectory_data cimport TrajFlag_t
 
-from py_ballisticcalc.trajectory_data import TrajFlag as PyTrajFlag
-from py_ballisticcalc.unit import PreferredUnits
 from py_ballisticcalc.vector import Vector
 import py_ballisticcalc.unit as pyunit
 

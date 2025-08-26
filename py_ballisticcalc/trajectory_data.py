@@ -49,7 +49,7 @@ See Also:
     - py_ballisticcalc.unit: Unit system for all measurement values
     - py_ballisticcalc.vector: Vector mathematics for position/velocity
 """
-
+from __future__ import annotations
 import math
 import typing
 import warnings
@@ -66,7 +66,6 @@ from py_ballisticcalc.unit import (Angular, Distance, Energy, Pressure, Temperat
 from py_ballisticcalc.vector import Vector
 from py_ballisticcalc.interpolation import (
     InterpolationMethod,
-    InterpolationMethodEnum,
     interpolate_3_pt,
     interpolate_2_pt,
 )
@@ -160,7 +159,7 @@ class TrajFlag(int):
         }
 
     @staticmethod
-    def name(value: Union[int, 'TrajFlag']) -> str:
+    def name(value: Union[int, TrajFlag]) -> str:
         """Get the human-readable name for a trajectory flag value.
         
         Converts a numeric flag value to its corresponding string name for
@@ -256,19 +255,19 @@ class BaseTrajData(NamedTuple):
 
     @staticmethod
     def interpolate(key_attribute: str, key_value: float,
-                    p0: "BaseTrajData", p1: "BaseTrajData", p2: "BaseTrajData",
-                    method: InterpolationMethod = "pchip") -> "BaseTrajData":
+                    p0: BaseTrajData, p1: BaseTrajData, p2: BaseTrajData,
+                    method: InterpolationMethod = "pchip") -> BaseTrajData:
         """
         Interpolate a BaseTrajData point using monotone PCHIP (default) or linear.
 
         Args:
-            key_attribute (str): Can be 'time', 'mach', or a vector component like 'position.x' or 'velocity.z'.
-            key_value (float): The value to interpolate for.
-            p0, p1, p2 (BaseTrajData): Three points surrounding the key_value.
-            method (str): 'pchip' (default, monotone cubic Hermite) or 'linear'.
+            key_attribute: Can be 'time', 'mach', or a vector component like 'position.x' or 'velocity.z'.
+            key_value: The value to interpolate for.
+            p0, p1, p2: Three points surrounding the key_value.
+            method: 'pchip' (default, monotone cubic Hermite) or 'linear'.
 
         Returns:
-            BaseTrajData: The interpolated data point.
+            The interpolated data point.
 
         Raises:
             AttributeError: If the key_attribute is not a member of BaseTrajData.
@@ -327,44 +326,24 @@ TRAJECTORY_DATA_SYNONYMS: dict[TRAJECTORY_DATA_ATTRIBUTES, TRAJECTORY_DATA_ATTRI
     'z': 'windage',
 }
 class TrajectoryData(NamedTuple):
-    """
-    Data for one point in ballistic trajectory.
+    """Data for one point in ballistic trajectory."""
 
-    Attributes:
-        time (float): Bullet flight time in seconds.
-        distance (Distance): Down-range (x-axis) coordinate of this point.
-        velocity (Velocity): Velocity.
-        mach (float): Velocity in Mach terms.
-        height (Distance): Vertical (y-axis) coordinate of this point.
-        slant_height (Distance): Distance orthogonal to sight-line
-        drop_adj (Angular): Sight adjustment to zero slant_height at this distance.
-        windage (Distance): Windage (z-axis) coordinate of this point.
-        windage_adj (Angular): Windage adjustment.
-        slant_distance (Distance): Distance along sight line that is closest to this point.
-        angle (Angular): Angle of velocity vector relative to x-axis.
-        density_ratio (float): Ratio of air density here to standard density.
-        drag (float): Standard Drag Factor at this point.
-        energy (Energy): Energy of bullet at this point.
-        ogw (Weight): Optimal game weight, given .energy.
-        flag (Union[TrajFlag, int]): Row type.
-    """
-
-    time: float
-    distance: Distance
+    time: float  # Flight time in seconds
+    distance: Distance  # Down-range (x-axis) coordinate of this point
     velocity: Velocity
-    mach: float
-    height: Distance
-    slant_height: Distance
-    drop_adj: Angular
-    windage: Distance
-    windage_adj: Angular
-    slant_distance: Distance
-    angle: Angular
-    density_ratio: float
-    drag: float
-    energy: Energy
-    ogw: Weight
-    flag: Union[TrajFlag, int]
+    mach: float  # Velocity in Mach terms
+    height: Distance  # Vertical (y-axis) coordinate of this point
+    slant_height: Distance  # Distance orthogonal to sight-line
+    drop_adj: Angular  # Sight adjustment to zero slant_height at this distance
+    windage: Distance  # Windage (z-axis) coordinate of this point
+    windage_adj: Angular  # Windage adjustment
+    slant_distance: Distance  # Distance along sight line that is closest to this point
+    angle: Angular  # Angle of velocity vector relative to x-axis
+    density_ratio: float  # Ratio of air density here to standard density
+    drag: float  # Standard Drag Factor at this point
+    energy: Energy  # Energy of bullet at this point
+    ogw: Weight  # Optimal game weight, given .energy
+    flag: Union[TrajFlag, int]  # Row type
 
     @property
     def x(self) -> Distance:
@@ -446,18 +425,18 @@ class TrajectoryData(NamedTuple):
         )
 
     @staticmethod
-    def from_base_data(props: "ShotProps", data: BaseTrajData,
-                       flag: Union[TrajFlag, int] = TrajFlag.NONE) -> "TrajectoryData":
+    def from_base_data(props: ShotProps, data: BaseTrajData,
+                       flag: Union[TrajFlag, int] = TrajFlag.NONE) -> TrajectoryData:
         """Creates a TrajectoryData object from BaseTrajData."""
         return TrajectoryData.from_props(props, data.time, data.position, data.velocity, data.mach, flag)
 
     @staticmethod
-    def from_props(props: "ShotProps",
+    def from_props(props: ShotProps,
                     time: float,
                     range_vector: Vector,
                     velocity_vector: Vector,
                     mach: float,
-                    flag: Union[TrajFlag, int] = TrajFlag.NONE) -> "TrajectoryData":
+                    flag: Union[TrajFlag, int] = TrajFlag.NONE) -> TrajectoryData:
         """Creates a TrajectoryData object, which corresponds to one point in the ballistic trajectory."""
         spin_drift = props.spin_drift(time)
         velocity = velocity_vector.magnitude()
@@ -490,22 +469,22 @@ class TrajectoryData(NamedTuple):
 
     @staticmethod
     def interpolate(key_attribute: TRAJECTORY_DATA_ATTRIBUTES, value: Union[float, GenericDimension],
-                    p0: "TrajectoryData", p1: "TrajectoryData", p2: "TrajectoryData",
+                    p0: TrajectoryData, p1: TrajectoryData, p2: TrajectoryData,
                     flag: Union[TrajFlag, int]=TrajFlag.NONE,
-                    method: InterpolationMethod = "pchip") -> "TrajectoryData":
+                    method: InterpolationMethod = "pchip") -> TrajectoryData:
         """
         Interpolate TrajectoryData where key_attribute==value using PCHIP (default) or linear.
 
         Args:
-            key_attribute (str): Attribute to key on (e.g., 'time', 'distance').
-            value (Union[float, GenericDimension]): Target value for the key attribute. A bare float is treated as
-                                                    raw value for dimensioned fields.
-            p0, p1, p2 (TrajectoryData): Three points surrounding the target.
-            flag (Union[TrajFlag, int]): Flag to assign to the new point.
-            method (str): 'pchip' (monotone cubic Hermite) or 'linear'.
+            key_attribute: Attribute to key on (e.g., 'time', 'distance').
+            value: Target value for the key attribute. A bare float is treated as
+                   raw value for dimensioned fields.
+            p0, p1, p2: Three points surrounding the target.
+            flag: Flag to assign to the new point.
+            method: 'pchip' (monotone cubic Hermite) or 'linear'.
 
         Returns:
-            TrajectoryData: Interpolated point with key_attribute==value.
+            Interpolated point with key_attribute==value.
 
         Raises:
             AttributeError: If TrajectoryData doesn't have the specified attribute.
@@ -588,27 +567,6 @@ class ShotProps:
     atmospheric data, projectile properties) and stores them in optimized formats
     for repeated use during trajectory integration. All values are converted to
     internal units (feet, seconds, grains) for computational efficiency.
-    
-    Attributes:
-        shot: Original Shot object containing user input parameters.
-        bc: Ballistic coefficient for drag calculations.
-        curve: Pre-computed quadratic interpolation curves for drag coefficient lookup.
-        mach_list: Mach number list corresponding to drag table data points.
-        look_angle_rad: Line of sight angle from horizontal in radians (positive = upward).
-        twist_inch: Barrel rifling twist rate in inches per rotation.
-        length_inch: Projectile length in inches (for stability and drift calculations).
-        diameter_inch: Projectile diameter in inches (for stability and drift calculations).
-        weight_grains: Projectile weight in grains (for energy, stability, and drift calculations).
-        barrel_elevation_rad: Barrel elevation angle from horizontal in radians.
-        barrel_azimuth_rad: Barrel azimuth angle from reference direction in radians.
-        sight_height_ft: Height of sight above bore centerline in feet.
-        cant_cosine: Cosine of weapon cant angle for vector decomposition.
-        cant_sine: Sine of weapon cant angle for vector decomposition.
-        alt0_ft: Initial altitude above sea level in feet for atmospheric calculations.
-        muzzle_velocity_fps: Projectile muzzle velocity in feet per second.
-        stability_coefficient: Miller stability coefficient (computed post-init).
-        calc_step: Integration step size for numerical calculations (computed post-init).
-        filter_flags: Trajectory flags for filtering special points (computed post-init).
         
     Examples:
         Create ShotProps from Shot object:
@@ -655,10 +613,10 @@ class ShotProps:
     TODO: The Shot member object should either be a copy or immutable so that subsequent changes to its
           properties do not invalidate the calculations and data associated with this ShotProps instance.
     """
-    shot: Shot
+    shot: Shot  # Reference to the original Shot object
     bc: float  # Ballistic coefficient
-    curve: List[CurvePoint]
-    mach_list: List[float]
+    curve: List[CurvePoint]  # Pre-computed drag curve points
+    mach_list: List[float]  # List of Mach numbers for interpolation
 
     look_angle_rad: float  # Slant angle in radians
     twist_inch: float  # Twist rate of barrel rifling, in inches of length to make one full rotation
@@ -672,9 +630,9 @@ class ShotProps:
     cant_sine: float  # Sine of the cant angle
     alt0_ft: float  # Initial altitude in feet
     muzzle_velocity_fps: float  # Muzzle velocity in feet per second
-    stability_coefficient: float = field(init=False)
+    stability_coefficient: float = field(init=False)  # Miller stability coefficient
     calc_step: float = field(init=False)  # Calculation step size
-    filter_flags: Union[TrajFlag, int] = field(init=False)
+    filter_flags: Union[TrajFlag, int] = field(init=False)  # Flags for special ballistic trajectory points
 
     def __post_init__(self):
         self.stability_coefficient = self._calc_stability_coefficient()
@@ -688,7 +646,7 @@ class ShotProps:
         return Angular.Radian(self.look_angle_rad)
 
     @classmethod
-    def from_shot(cls, shot: Shot) -> 'ShotProps':
+    def from_shot(cls, shot: Shot) -> ShotProps:
         """Initializes a ShotProps instance from a Shot instance."""
         return cls(
             shot=shot,
@@ -723,10 +681,10 @@ class ShotProps:
             - The magic constant found here = StandardDensity * pi / (4 * 2 * 144)
 
         Args:
-            mach (float): The Mach number.
+            mach: The Mach number.
 
         Returns:
-            float: The standard drag factor at the given Mach number.
+            The standard drag factor at the given Mach number.
         """
         # cd = calculate_by_curve(self._table_data, self._curve, mach)
         # use calculation over list[double] instead of list[DragDataPoint]
@@ -783,20 +741,20 @@ def create_trajectory_row(time: float, range_vector: Vector, velocity_vector: Ve
     """Creates a TrajectoryData object representing a single row of trajectory data.
 
     Args:
-        time (float): Time of flight in seconds.
-        range_vector (Vector): Position vector in feet.
-        velocity_vector (Vector): Velocity vector in fps.
-        velocity (float): Velocity magnitude in fps.
-        mach (float): Mach number.
-        spin_drift (float): Spin drift in feet.
-        look_angle (float): Slant angle in radians.
-        density_ratio (float): Density ratio (rho / rho_0).
-        drag (float): Drag value.
-        weight (float): Weight value.
-        flag (Union[TrajFlag, int]): Flag value.
+        time: Time of flight in seconds.
+        range_vector: Position vector in feet.
+        velocity_vector: Velocity vector in fps.
+        velocity: Velocity magnitude in fps.
+        mach: Mach number.
+        spin_drift: Spin drift in feet.
+        look_angle: Slant angle in radians.
+        density_ratio: Density ratio (rho / rho_0).
+        drag: Drag value.
+        weight: Weight value.
+        flag: Flag value.
 
     Returns:
-        TrajectoryData: A TrajectoryData object representing the trajectory data.
+        A TrajectoryData object representing the trajectory data.
     """
     warnings.warn("This method is deprecated", DeprecationWarning)
 
@@ -864,11 +822,11 @@ def get_correction(distance: float, offset: float) -> float:
     """Calculates the sight adjustment in radians.
 
     Args:
-        distance (float): The distance to the target in feet.
-        offset (float): The offset from the target in feet.
+        distance: The distance to the target in feet.
+        offset: The offset from the target in feet.
 
     Returns:
-        float: The sight adjustment in radians.
+        The sight adjustment in radians.
     """
     if distance != 0:
         return math.atan(offset / distance)
@@ -879,11 +837,11 @@ def calculate_energy(bullet_weight: float, velocity: float) -> float:
     """Calculates the kinetic energy of a projectile.
 
     Args:
-        bullet_weight (float): The weight of the bullet in pounds.
-        velocity (float): The velocity of the bullet in feet per second.
+        bullet_weight: The weight of the bullet in pounds.
+        velocity: The velocity of the bullet in feet per second.
 
     Returns:
-        float: The kinetic energy of the projectile in foot-pounds.
+        The kinetic energy of the projectile in foot-pounds.
     """
     return bullet_weight * math.pow(velocity, 2) / 450400
 
@@ -892,11 +850,11 @@ def calculate_ogw(bullet_weight: float, velocity: float) -> float:
     """Calculates the optimal game weight for a projectile.
 
     Args:
-        bullet_weight (float): The weight of the bullet in pounds.
-        velocity (float): The velocity of the bullet in feet per second.
+        bullet_weight: The weight of the bullet in pounds.
+        velocity: The velocity of the bullet in feet per second.
 
     Returns:
-        float: The optimal game weight in pounds.
+        The optimal game weight in pounds.
     """
     return math.pow(bullet_weight, 2) * math.pow(velocity, 3) * 1.5e-12
 
@@ -943,10 +901,10 @@ def _get_only_mach_data(data: List[DragDataPoint]) -> List[float]:
     """Extracts Mach values from a list of DragDataPoint objects.
 
     Args:
-        data (List[DragDataPoint]): A list of DragDataPoint objects.
+        data: A list of DragDataPoint objects.
 
     Returns:
-        List[float]: A list containing only the Mach values from the input data.
+        A list containing only the Mach values from the input data.
     """
     return [dp.Mach for dp in data]
 
@@ -986,13 +944,13 @@ def _calculate_by_curve_and_mach_list(mach_list: List[float], curve: List[CurveP
     the value using the quadratic coefficients of that curve segment.
 
     Args:
-        mach_list (List[float]): A sorted list of Mach values corresponding to the `curve` points.
-        curve (List[CurvePoint]): A list of CurvePoint objects, where each object
+        mach_list: A sorted list of Mach values corresponding to the `curve` points.
+        curve: A list of CurvePoint objects, where each object
             contains quadratic coefficients (a, b, c) for a Mach number segment.
-        mach (float): The Mach number at which to calculate the value.
+        mach: The Mach number at which to calculate the value.
 
     Returns:
-        float: The calculated value based on the interpolated curve at the given Mach number.
+        The calculated value based on the interpolated curve at the given Mach number.
     """
     num_points = len(curve)
     mlo = 0
@@ -1014,20 +972,12 @@ def _calculate_by_curve_and_mach_list(mach_list: List[float], curve: List[CurveP
 
 
 class DangerSpace(NamedTuple):
-    """Stores the danger space data for distance specified.
-
-    Attributes:
-        at_range (TrajectoryData): Trajectory data at the specified range.
-        target_height (Distance): Target height.
-        begin (TrajectoryData): Beginning of danger space.
-        end (TrajectoryData): End of danger space.
-        look_angle (Angular): Slant angle.
-    """
-    at_range: TrajectoryData
-    target_height: Distance
-    begin: TrajectoryData
-    end: TrajectoryData
-    look_angle: Angular
+    """Stores the danger space data for distance specified."""
+    at_range: TrajectoryData  # TrajectoryData at the target range
+    target_height: Distance  # Target height
+    begin: TrajectoryData  # TrajectoryData at beginning of danger space
+    end: TrajectoryData  # TrajectoryData at end of danger space
+    look_angle: Angular  # Look angle
 
     def __str__(self) -> str:
         return f'Danger space at {self.at_range.slant_distance << PreferredUnits.distance} ' \
@@ -1039,12 +989,12 @@ class DangerSpace(NamedTuple):
                if self.look_angle != 0 else '')
 
     # pylint: disable=import-outside-toplevel
-    def overlay(self, ax: 'Axes', label: Optional[str] = None) -> None:
+    def overlay(self, ax: Axes, label: Optional[str] = None) -> None:
         """Highlights danger-space region on plot.
 
         Args:
-            ax (Axes): The axes to overlay on.
-            label (Optional[str], optional): Label for the overlay. Defaults to None.
+            ax: The axes to overlay on.
+            label: Label for the overlay. Defaults to None.
 
         Raises:
             ImportError: If plotting dependencies are not installed.
@@ -1064,11 +1014,11 @@ class HitResult:
     """Computed trajectory data of the shot.
 
     Attributes:
-        shot (ShotProps): The parameters of the shot calculation.
-        trajectory (list[TrajectoryData]): Computed TrajectoryData points.
-        base_data (list[BaseTrajData]): Base trajectory data points for interpolation.
-        extra (bool): [DEPRECATED] Whether special points (TrajFlag > 0) were requested.
-        error (Optional[RangeError]): RangeError, if any.
+        shot: The parameters of the shot calculation.
+        trajectory: Computed TrajectoryData points.
+        base_data: Base trajectory data points for interpolation.
+        extra: [DEPRECATED] Whether extra_data was requested.
+        error: RangeError, if any.
 
     TODO:
     * Implement dense_output in cythonized engines to populate base_data
@@ -1133,17 +1083,17 @@ class HitResult:
 
     def get_at(self, key_attribute: TRAJECTORY_DATA_ATTRIBUTES,
                      value: Union[float, GenericDimension],
-                     start_from_time: float=0.0) -> 'TrajectoryData':
+                     start_from_time: float=0.0) -> TrajectoryData:
         """
         Gets TrajectoryData where key_attribute==value, interpolating to create new object if necessary.
             Preserves the units of the original trajectory data.
 
         Args:
-            key_attribute (str): The name of the TrajectoryData attribute to key on (e.g., 'time', 'distance').
-            value (Union[float, GenericDimension]): The value of the key attribute to find. If a float is provided
-                                                    for a dimensioned attribute, it's assumed to be a .raw_value.
-            start_from_time (float): The time to center the search from (default is 0.0).  If the target value is
-                                     at a local extremum then the search will only go forward in time.
+            key_attribute: The name of the TrajectoryData attribute to key on (e.g., 'time', 'distance').
+            value: The value of the key attribute to find. If a float is provided
+                   for a dimensioned attribute, it's assumed to be a .raw_value.
+            start_from_time: The time to center the search from (default is 0.0).  If the target value is
+                             at a local extremum then the search will only go forward in time.
 
         Returns:
             TrajectoryData: (where key_attribute==value)
@@ -1241,10 +1191,10 @@ class HitResult:
     def index_at_distance(self, d: Distance) -> int:
         """
         Args:
-            d (Distance): Distance for which we want Trajectory Data.
+            d: Distance for which we want Trajectory Data.
 
         Returns:
-            int: Index of first trajectory row with .distance >= d; otherwise -1.
+            Index of first trajectory row with .distance >= d; otherwise -1.
         """
         epsilon = 1e-1  # small value to avoid floating point issues
         return next((i for i in range(len(self.trajectory))
@@ -1254,10 +1204,10 @@ class HitResult:
     def get_at_distance(self, d: Distance) -> TrajectoryData:
         """
         Args:
-            d (Distance): Distance for which we want Trajectory Data.
+            d: Distance for which we want Trajectory Data.
 
         Returns:
-            TrajectoryData: First trajectory row with .distance >= d.
+            First trajectory row with .distance >= d.
 
         Raises:
             ArithmeticError: If trajectory doesn't reach requested distance.
@@ -1272,10 +1222,10 @@ class HitResult:
     def get_at_time(self, t: float) -> TrajectoryData:
         """
         Args:
-            t (float): Time for which we want Trajectory Data.
+            t: Time for which we want Trajectory Data.
 
         Returns:
-            TrajectoryData: First trajectory row with .time >= t.
+            First trajectory row with .time >= t.
 
         Raises:
             ArithmeticError: If trajectory doesn't reach requested time.
@@ -1334,7 +1284,7 @@ class HitResult:
                            end_row,
                            self.props.look_angle)
 
-    def dataframe(self, formatted: bool = False) -> 'DataFrame':
+    def dataframe(self, formatted: bool = False) -> DataFrame:
         """
         Returns the trajectory table as a DataFrame.
 
@@ -1355,7 +1305,7 @@ class HitResult:
                 "Use `pip install py_ballisticcalc[charts]` to get trajectory as pandas.DataFrame"
             ) from err
 
-    def plot(self, look_angle: Optional[Angular] = None) -> 'Axes':
+    def plot(self, look_angle: Optional[Angular] = None) -> Axes:
         """
         Returns a graph of the trajectory.
 

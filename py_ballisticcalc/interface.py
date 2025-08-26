@@ -1,4 +1,14 @@
-"""Implements basic interface for the ballistics calculator"""
+"""Ballistics calculator interface and engine loading system.
+
+This module provides the main `Calculator` class that serves as the primary interface
+for ballistic trajectory calculations. It implements a plugin-based architecture
+that can dynamically load different integration engines through Python entry points.
+The module relies on the EngineProtocol to ensure that engines offer the necessary methods.
+
+Key Classes:
+    Calculator: Main ballistics calculator with pluggable engine support
+    _EngineLoader: Internal utility for discovering and loading engine plugins
+"""
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points, EntryPoint
 from typing import Generic, Any
@@ -8,7 +18,6 @@ from deprecated import deprecated
 from typing_extensions import Union, List, Optional, TypeVar, Type, Generator
 
 from py_ballisticcalc import RK4IntegrationEngine
-# pylint: disable=import-error,no-name-in-module
 from py_ballisticcalc.conditions import Shot
 from py_ballisticcalc.drag_model import DragDataPoint
 from py_ballisticcalc.generics.engine import EngineProtocol
@@ -108,7 +117,7 @@ class Calculator(Generic[ConfigT]):
         to retrieve the attribute from the `_engine_instance`.
 
         Args:
-            item (str): The name of the attribute to retrieve.
+            item: The name of the attribute to retrieve.
 
         Returns:
             Any: The value of the attribute from `_engine_instance`.
@@ -185,7 +194,7 @@ class Calculator(Generic[ConfigT]):
         """Calculates the trajectory for the given shot parameters.
 
         Args:
-            shot (Shot): Shot parameters, including position and barrel angle.
+            shot: Shot parameters, including position and barrel angle.
             trajectory_range (float | Distance): Distance at which to stop computing the trajectory.
             trajectory_step (float | Distance | None, optional): Distance between recorded trajectory points.
                                                                  If 0 or None, defaults to `trajectory_range`.
