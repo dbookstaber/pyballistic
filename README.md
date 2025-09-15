@@ -20,7 +20,7 @@ This repo offers [`py_ballisticcalc`](https://github.com/o-murphy/py-ballisticca
 https://github.com/dbookstaber/pyballistic
 
 [license]:
-https://img.shields.io/github/license/o-murphy/pyballistic?style=flat-square
+https://img.shields.io/github/license/o-murphy/py-ballisticcalc?style=flat-square
 
 [LGPL-3]:
 https://opensource.org/licenses/LGPL-3.0-only

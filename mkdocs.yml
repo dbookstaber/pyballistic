@@ -109,7 +109,7 @@ theme:
   logo: 'favicon.svg'
   favicon: 'favicon.svg'
 
-repo_name: o-murphy/pyballistic
+repo_name: dbookstaber/pyballistic
 repo_url: https://github.com/dbookstaber/pyballistic
 extra:
   version:
