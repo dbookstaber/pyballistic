@@ -1,57 +1,53 @@
 # BallisticCalculator
 
-LGPL library for small arms ballistic calculations based on point-mass (3 DoF) plus spin drift.
+LGPL library for small arms ballistic calculations based on point-mass (3 DoF) plus spin drift.  
+
+This repo offers [`py_ballisticcalc`](https://github.com/o-murphy/py-ballisticcalc) under the more convenient name `pyballistic`.
 
 [![license]][LGPL-3]
 [![pypi]][PyPiUrl]
-[![pypi-pre]][pypi-pre-url]
 [![downloads]][pepy]
 [![downloads/month]][pepy]
 [![coverage]][coverage]
 [![py-versions]][sources]
 [![Made in Ukraine]][SWUBadge]
 
-[![Python Euler](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-euler-engine.yml/badge.svg)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-euler-engine.yml)
-[![Pytest RK4](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-rk4-engine.yml/badge.svg)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-rk4-engine.yml)
-[![Pytest Euler (Cython)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-cythonized-euler-engine.yml/badge.svg)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-cythonized-euler-engine.yml)
-[![Pytest RK4 (Cython)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-cythonized-rk4-engine.yml/badge.svg)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-cythonized-rk4-engine.yml)
-[![Pytest Scipy](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-scipy-engine.yml/badge.svg)](https://github.com/o-murphy/py-ballisticcalc/actions/workflows/pytest-scipy-engine.yml)
+[![Pytest RK4](https://github.com/dbookstaber/pyballistic/actions/workflows/pytest-rk4-engine.yml/badge.svg)](https://github.com/dbookstaber/pyballistic/actions/workflows/pytest-rk4-engine.yml)
+[![Pytest RK4 (Cython)](https://github.com/dbookstaber/pyballistic/actions/workflows/pytest-cythonized-rk4-engine.yml/badge.svg)](https://github.com/dbookstaber/pyballistic/actions/workflows/pytest-cythonized-rk4-engine.yml)
+[![Pytest Scipy](https://github.com/dbookstaber/pyballistic/actions/workflows/pytest-scipy-engine.yml/badge.svg)](https://github.com/dbookstaber/pyballistic/actions/workflows/pytest-scipy-engine.yml)
 
 [sources]:
-https://github.com/o-murphy/py-ballisticcalc
+https://github.com/dbookstaber/pyballistic
 
 [license]:
-https://img.shields.io/github/license/o-murphy/py-ballisticcalc?style=flat-square
+https://img.shields.io/github/license/o-murphy/pyballistic?style=flat-square
 
 [LGPL-3]:
 https://opensource.org/licenses/LGPL-3.0-only
 
 [pypi]:
-https://img.shields.io/pypi/v/py-ballisticcalc?style=flat-square&logo=pypi
+https://img.shields.io/pypi/v/pyballistic?style=flat-square&logo=pypi
 
 [PyPiUrl]:
-https://pypi.org/project/py-ballisticcalc/
-
-[pypi-pre]:
-https://img.shields.io/github/v/release/o-murphy/py-ballisticcalc?include_prereleases&style=flat-square&logo=pypi&label=pypi%20pre
+https://pypi.org/project/pyballistic/
 
 [pypi-pre-url]:
-https://pypi.org/project/py-ballisticcalc/#history
+https://pypi.org/project/pyballistic/#history
 
 [coverage]:
 ./coverage.svg
 
 [downloads]:
-https://img.shields.io/pepy/dt/py-ballisticcalc?style=flat-square
+https://img.shields.io/pepy/dt/pyballistic?style=flat-square
 
 [downloads/month]:
-https://static.pepy.tech/personalized-badge/py-ballisticcalc?style=flat-square&period=month&units=abbreviation&left_color=grey&right_color=blue&left_text=downloads%2Fmonth
+https://static.pepy.tech/personalized-badge/pyballistic?style=flat-square&period=month&units=abbreviation&left_color=grey&right_color=blue&left_text=downloads%2Fmonth
 
 [pepy]:
-https://pepy.tech/project/py-ballisticcalc
+https://pepy.tech/project/pyballistic
 
 [py-versions]:
-https://img.shields.io/pypi/pyversions/py-ballisticcalc?style=flat-square
+https://img.shields.io/pypi/pyversions/pyballistic?style=flat-square
 
 [Made in Ukraine]:
 https://img.shields.io/badge/made_in-Ukraine-ffd700.svg?labelColor=0057b7&style=flat-square
@@ -62,7 +58,7 @@ https://stand-with-ukraine.pp.ua
 ### Contents
 
 * **[Installation](#installation)**
-    * [Latest stable](https://pypi.org/project/py-ballisticcalc/)
+    * [Latest stable](https://pypi.org/project/pyballistic/)
 
   [//]: # (  * [From sources]&#40;#installing-from-sources&#41;)
   [//]: # (  * [Clone and build]&#40;#clone-and-build&#41;)
@@ -74,21 +70,18 @@ https://stand-with-ukraine.pp.ua
     * [Units](#units)
     * [Calculation Engines](#calculation-engines)
 
-* **[Contributors](#contributors)**
-* **[About project](#about-project)**
-
 # Installation
 
 ## pip
 
 ```shell
-pip install py-ballisticcalc
+pip install pyballistic
 
 # Using precompiled backend (improves performance)
-pip install py-ballisticcalc[exts]
+pip install pyballistic[exts]
 
 # Using matplotlib and pandas uses additional dependencies
-pip install py-ballisticcalc[charts]
+pip install pyballistic[charts]
 ```
 
 ## uv
@@ -143,37 +136,6 @@ Choose between different calculation engines, or build your own.  Included engin
 | `cythonized_euler_engine` | 40x (faster)   | `[exts]`        | Compiled Euler integration |
 | `scipy_engine`            | 10x (faster)   | `scipy`         | Advanced numerical methods |
 
-
-# About project
-
-The library provides trajectory calculation for ballistic projectiles launched by airguns, bows, firearms, artillery, etc.
-
-The core point-mass (3DoF) ballistic model underlying this project was used on the earliest digital computers.  Robert McCoy (author of *Modern Exterior Ballistics*) implemented one in BASIC.  [JBM published code in C](https://www.jbmballistics.com/ballistics/downloads/downloads.shtml). Nikolay Gekht ported that to [C#](https://gehtsoft-usa.github.io/BallisticCalculator/web-content.html), extended it with formulas from Bryan Litz's _Applied Ballistics_, and ported it to [Go](https://godoc.org/github.com/gehtsoft-usa/go_ballisticcalc), while
-Alexandre Trofimov implemented a calculator in [JavaScript](https://ptosis.ch/ebalka/ebalka.html).
-
-This Python3 implementation has been expanded to support multiple ballistic coefficients and custom drag functions, such as those derived from Doppler radar data.
-
-## Contributors
-
-**This project exists thanks to all the people who contribute.**
-
-<a href="https://github.com/o-murphy/py_ballisticcalc/graphs/contributors"><img height=32 src="https://contrib.rocks/image?repo=o-murphy/py_ballisticcalc" /></a>
-
-Special thanks to:
-
-* **[David Bookstaber](https://github.com/dbookstaber)** - Ballistics Expert <br>
-*For help understanding and improving the functionality*
-* **[Serhiy Yevtushenko](https://github.com/serhiy-yevtushenko)** - Applied Mathematician <br>
-*For helping in consultations, testing and improving edge cases compatibility*
-* **[Nikolay Gekht](https://github.com/nikolaygekht)** <br>
-*For the sources code on C# and GO-lang from which this project firstly was forked*
-
-[//]: # (## Sister projects)
-
-[//]: # ()
-
-[//]: # (* **Py-BalCalc** - GUI App for [py_ballisticcalc]&#40;https://github.com/o-murphy/py_ballisticcalc&#41; solver library and profiles editor)
-
 [//]: # (* **eBallistica** - Kivy based mobile App for ballistic calculations)
 
 [//]: # ()
@@ -184,10 +146,8 @@ Special thanks to:
 
 ## RISK NOTICE
 
-The library performs very limited simulation of a complex physical process and so it performs a lot of approximations.
-Therefore, the calculation results MUST NOT be considered as completely and reliably reflecting actual behavior or
-characteristics of projectiles. While these results may be used for educational purpose, they must NOT be considered as reliable for the areas where incorrect calculation may cause making a wrong decision, financial harm, or can put a human life at risk.
+The library performs numerical approximations of complex physical processes.
+The calculation results MUST NOT be considered as completely and reliably reflecting real-world behavior of projectiles. While these results may be used for educational purpose, they must NOT be considered as reliable for the areas where incorrect calculation may cause making a wrong decision, financial harm, or can put a human life at risk.
 
 THE CODE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.

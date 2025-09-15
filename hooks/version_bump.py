@@ -59,8 +59,8 @@ def update_toml_version(file_path: Path, new_version: str, is_ext_file: bool = F
             if found_exts:
                 updated_exts_list = []
                 for dep_str in current_level:
-                    if dep_str.startswith('py_ballisticcalc.exts=='):
-                        updated_exts_list.append(f'py_ballisticcalc.exts=={new_version}')
+                    if dep_str.startswith('pyballistic.exts=='):
+                        updated_exts_list.append(f'pyballistic.exts=={new_version}')
                     else:
                         updated_exts_list.append(dep_str)
                 doc['project']['optional-dependencies']['exts'] = updated_exts_list
@@ -131,7 +131,7 @@ def main():
             f"Version '{version}' is invalid. Please use a valid semantic versioning format (e.g., 1.0.0, 1.0.0-alpha, 1.0.0+build).")
 
     pyproject_toml = Path("pyproject.toml")
-    bin_pyproject_toml = Path("py_ballisticcalc.exts", "pyproject.toml")
+    bin_pyproject_toml = Path("pyballistic.exts", "pyproject.toml")
 
     files_to_update = [pyproject_toml, bin_pyproject_toml]
 

@@ -4,4 +4,4 @@ Piecewise-constant wind segments parameterized by speed and `direction_from` (0Â
 
 ???+ api "API Documentation"
 
-    [`py_ballisticcalc.conditions.Wind`][py_ballisticcalc.conditions.Wind]<br>
+    [`pyballistic.conditions.Wind`][pyballistic.conditions.Wind]<br>

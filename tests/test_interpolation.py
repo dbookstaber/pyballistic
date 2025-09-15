@@ -3,10 +3,10 @@ import math
 
 import pytest
 
-from py_ballisticcalc.trajectory_data import BaseTrajData, TrajectoryData
-from py_ballisticcalc.interpolation import interpolate_3_pt, interpolate_2_pt
-from py_ballisticcalc.unit import Distance, Velocity, Angular, Energy, Weight
-from py_ballisticcalc.vector import Vector
+from pyballistic.trajectory_data import BaseTrajData, TrajectoryData
+from pyballistic.interpolation import interpolate_3_pt, interpolate_2_pt
+from pyballistic.unit import Distance, Velocity, Angular, Energy, Weight
+from pyballistic.vector import Vector
 
 
 class TestInterpolationBasic:

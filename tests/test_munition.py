@@ -1,6 +1,6 @@
 import pytest
 
-from py_ballisticcalc import Sight, Ammo, DragModel, TableG7, Unit
+from pyballistic import Sight, Ammo, DragModel, TableG7, Unit
 
 
 class TestAmmoPowderSensitivity:

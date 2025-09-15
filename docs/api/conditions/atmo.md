@@ -1,4 +1,4 @@
-::: py_ballisticcalc.conditions.Atmo
+::: pyballistic.conditions.Atmo
 
 
-::: py_ballisticcalc.conditions.Vacuum
+::: pyballistic.conditions.Vacuum

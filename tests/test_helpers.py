@@ -5,12 +5,12 @@ import time
 
 import pytest
 
-from py_ballisticcalc import Distance, DragModel, TableG1, Weight, Ammo, Shot, Velocity, \
+from pyballistic import Distance, DragModel, TableG1, Weight, Ammo, Shot, Velocity, \
     Angular, Calculator, TrajFlag
-from py_ballisticcalc.helpers import vacuum_angle_to_zero, vacuum_range, vacuum_time_to_zero, vacuum_velocity_to_zero
-from py_ballisticcalc.helpers import find_index_of_point_for_distance, find_index_for_time_point, \
+from pyballistic.helpers import vacuum_angle_to_zero, vacuum_range, vacuum_time_to_zero, vacuum_velocity_to_zero
+from pyballistic.helpers import find_index_of_point_for_distance, find_index_for_time_point, \
     find_time_for_distance_in_shot
-from py_ballisticcalc.logger import logger, disable_file_logging, enable_file_logging
+from pyballistic.logger import logger, disable_file_logging, enable_file_logging
 
 
 class TestVacuumCalcs:

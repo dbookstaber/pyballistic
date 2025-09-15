@@ -1,4 +1,4 @@
-from py_ballisticcalc import Distance, Unit
+from pyballistic import Distance, Unit
 from timeit import timeit
 
 N = 100

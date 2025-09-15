@@ -1,4 +1,4 @@
-::: py_ballisticcalc.unit.PreferredUnits
+::: pyballistic.unit.PreferredUnits
     options:
         show_signature: false
         separate_signature: false
@@ -9,7 +9,7 @@
 You can define and load `PreferredUnits` presets from `toml` files.  There are three such preset files in `/assets` that have predefined loader functions that can be invoked as follows:
 
 ```python
-from py_ballisticcalc import loadImperialUnits, loadMetricUnits, loadMixedUnits
+from pyballistic import loadImperialUnits, loadMetricUnits, loadMixedUnits
 
 loadImperialUnits()
 loadMetricUnits()
@@ -23,7 +23,7 @@ loadMixedUnits()
 From **`assets/.pybc-imperial.toml`**:
 
 ```toml
---8<-- "py_ballisticcalc/assets/.pybc-imperial.toml:pybc-imperial"
+--8<-- "pyballistic/assets/.pybc-imperial.toml:pybc-imperial"
 ```
 
 #### Metric Units
@@ -31,7 +31,7 @@ From **`assets/.pybc-imperial.toml`**:
 From **`assets/.pybc-metrics.toml`**:
 
 ```toml
---8<-- "py_ballisticcalc/assets/.pybc-metrics.toml:pybc-metric"
+--8<-- "pyballistic/assets/.pybc-metrics.toml:pybc-metric"
 ```
 
 #### Mixed Units
@@ -44,13 +44,13 @@ From **`assets/.pybc-metrics.toml`**:
 From **`assets/.pybc-mixed.toml`**:
 
 ```toml
---8<-- "py_ballisticcalc/assets/.pybc-mixed.toml:pybc-mixed"
+--8<-- "pyballistic/assets/.pybc-mixed.toml:pybc-mixed"
 ```
 
 
-::: py_ballisticcalc.unit.UnitProps
+::: pyballistic.unit.UnitProps
 
-::: py_ballisticcalc.unit.UnitPropsDict
+::: pyballistic.unit.UnitPropsDict
     options:
         show_signature: false
         separate_signature: false
@@ -58,5 +58,5 @@ From **`assets/.pybc-mixed.toml`**:
         show_signature_annotations: false
 
 ```python
---8<-- "py_ballisticcalc/unit.py:UnitPropsDict"
+--8<-- "pyballistic/unit.py:UnitPropsDict"
 ```

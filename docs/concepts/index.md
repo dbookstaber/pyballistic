@@ -26,7 +26,7 @@
 
 The shooter typically cares about the line of sight (LoS): Sight adjustments are made relative to LoS.  Ranging errors – and hence [danger space](#danger-space) – follow the _slant-height_, not the horizontal height.
 
-The following diagram shows how _slant distance_ and _slant height_ relate by _look angle_ to the underlying (distance $x$, height $y$) trajectory data.  [Understanding Slant Angle](https://github.com/o-murphy/py_ballisticcalc/blob/master/examples/Understanding_Slant_Angle.ipynb) covers these concepts in more detail.
+The following diagram shows how _slant distance_ and _slant height_ relate by _look angle_ to the underlying (distance $x$, height $y$) trajectory data.  [Understanding Slant Angle](https://github.com/dbookstaber/pyballistic/blob/master/examples/Understanding_Slant_Angle.ipynb) covers these concepts in more detail.
 ![Look-angle trigonometry](BallisticTrig.svg)
 
 ## Danger Space
@@ -38,7 +38,7 @@ Danger space is a practical measure of sensitivity to ranging error. It is defin
 ### Example
 
 ```python
-from py_ballisticcalc import *
+from pyballistic import *
 
 # Define a standard .308 Winchester shot: G7 BC=0.22, muzzle velocity 2600fps
 zero = Shot(weapon=Weapon(sight_height=Distance.Inch(2)),
@@ -55,7 +55,7 @@ result = calc.fire(zero, trajectory_range=Distance.Yard(500),
 ax = result.plot()
 
 # Compute and display danger space for a 10-inch target at 350 yards
-danger_space = shot_result.danger_space(Distance.Yard(350), Distance.Inch(10))
+danger_space = result.danger_space(Distance.Yard(350), Distance.Inch(10))
 danger_space.overlay(ax)
 plt.show()
 print(danger_space)
@@ -72,18 +72,18 @@ print(danger_space)
 
 ???+ api "Selected API references"
 
-	[`py_ballisticcalc.interface.Calculator`][py_ballisticcalc.interface.Calculator]<br>
-	[`py_ballisticcalc.munition.Ammo`][py_ballisticcalc.munition.Ammo]<br>
-	[`py_ballisticcalc.drag_model.DragModel`][py_ballisticcalc.drag_model.DragModel]<br>
-	[`py_ballisticcalc.conditions.Atmo`][py_ballisticcalc.conditions.Atmo]<br>
-	[`py_ballisticcalc.munition.Weapon`][py_ballisticcalc.munition.Weapon]<br>
-	[`py_ballisticcalc.conditions.Shot`][py_ballisticcalc.conditions.Shot]<br>
-	[`py_ballisticcalc.trajectory_data.TrajectoryData`][py_ballisticcalc.trajectory_data.TrajectoryData]<br>
-	[`py_ballisticcalc.trajectory_data.HitResult`][py_ballisticcalc.trajectory_data.HitResult]<br>
-	[`py_ballisticcalc.unit.Unit`][py_ballisticcalc.unit.Unit]<br>
+	[`pyballistic.interface.Calculator`][pyballistic.interface.Calculator]<br>
+	[`pyballistic.munition.Ammo`][pyballistic.munition.Ammo]<br>
+	[`pyballistic.drag_model.DragModel`][pyballistic.drag_model.DragModel]<br>
+	[`pyballistic.conditions.Atmo`][pyballistic.conditions.Atmo]<br>
+	[`pyballistic.munition.Weapon`][pyballistic.munition.Weapon]<br>
+	[`pyballistic.conditions.Shot`][pyballistic.conditions.Shot]<br>
+	[`pyballistic.trajectory_data.TrajectoryData`][pyballistic.trajectory_data.TrajectoryData]<br>
+	[`pyballistic.trajectory_data.HitResult`][pyballistic.trajectory_data.HitResult]<br>
+	[`pyballistic.unit.Unit`][pyballistic.unit.Unit]<br>
 
 [Examples.ipynb]:
-https://github.com/o-murphy/py_ballisticcalc/blob/master/examples/Examples.ipynb
+https://github.com/dbookstaber/pyballistic/blob/master/examples/Examples.ipynb
 
 [ExtremeExamples.ipynb]:
-https://github.com/o-murphy/py_ballisticcalc/blob/master/examples/ExtremeExamples.ipynb
+https://github.com/dbookstaber/pyballistic/blob/master/examples/ExtremeExamples.ipynb

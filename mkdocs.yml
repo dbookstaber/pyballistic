@@ -1,18 +1,15 @@
-site_name: py-ballisticcalc
+site_name: pyballistic
 site_description: LGPL ballistic calculation library
 edit_uri: edit/main/docs/
-site_url: https://o-murphy.github.io/py-ballisticcalc/
+site_url: https://dbookstaber.github.io/pyballistic/
 
 nav:
 - Get started:
   - QuickStart: index.md
-#  - Why use py-balllisticcalc: why.md
   - Installation: install.md
 #  - Examples: examples/Examples
   - Help: help.md
   - Contributing: contributing.md
-#  - Version policy: version-policy.md
-#  - Changelog: changelog.md
 - Concepts:
   - Basics: concepts/index.md
   - "📏 Units": concepts/unit.md
@@ -36,9 +33,6 @@ nav:
     - "🪂 DragModel": concepts/drag_model.md
   - "📈 Trajectory Data": concepts/trajectory_data.md
   - "📐 Vector": concepts/vector.md
-#    - Interface:
-#    - Logger: concepts/logger.md
-#  - Performance:
 - API Documentation:
     - Overview: api/index.md
     - Calculator:
@@ -62,8 +56,6 @@ nav:
       - Dimensions: api/units/dimensions.md
       - PreferredUnits: api/units/preferred_units.md
       - Vector: api/vector.md
-#    - Engines: api/engines.md
-#    - Logger: api/logger.md
 - Internals:
   - Architecture: internals/architecture.md
   - Developer Details: internals/details.md
@@ -117,8 +109,8 @@ theme:
   logo: 'favicon.svg'
   favicon: 'favicon.svg'
 
-repo_name: o-murphy/py_ballisticcalc
-repo_url: https://github.com/o-murphy/py_ballisticcalc
+repo_name: o-murphy/pyballistic
+repo_url: https://github.com/dbookstaber/pyballistic
 extra:
   version:
     provider: mike
@@ -192,7 +184,7 @@ markdown_extensions:
 #- 'docs/plugins/main.py'
 
 #watch:
-#  - py_ballisticcalc
+#  - pyballistic
 
 plugins:
   - autorefs

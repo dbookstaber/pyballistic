@@ -1,1 +1,1 @@
-::: py_ballisticcalc.conditions.Shot
+::: pyballistic.conditions.Shot

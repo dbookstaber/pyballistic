@@ -1,6 +1,6 @@
 # Summary of Ballistic Engine Benchmarks
 
-This document summarizes the findings from the [`examples/BenchmarkEngines.ipynb`][BenchmarkEngines.ipynb] notebook, which compares the performance and accuracy of the different calculation engines available in the `py-ballisticcalc` library.
+This document summarizes the findings from the [`examples/BenchmarkEngines.ipynb`][BenchmarkEngines.ipynb] notebook, which compares the performance and accuracy of the different calculation engines available in the `pyballistic` library.
 
 ## Introduction
 
@@ -53,9 +53,9 @@ This chart shows the range of performance and speed observed for each engine.  S
 
 ### Python Engines
 
-These engines are implemented from scratch in pure Python, and make it easy to see and understand exactly how the calculator works.  Their integration step size can be adjusted with the [`cStepMultiplier`][py_ballisticcalc.engines.base_engine.BaseEngineConfigDict] configuration parameter.
+These engines are implemented from scratch in pure Python, and make it easy to see and understand exactly how the calculator works.  Their integration step size can be adjusted with the [`cStepMultiplier`][pyballistic.engines.base_engine.BaseEngineConfigDict] configuration parameter.
 
-* **`rk4_engine`:**  The RK4 algorithm is the most frequently used for ballistic calculators, and we continue to recommend it.  This is the default `py_ballisticcalc` engine.
+* **`rk4_engine`:**  The RK4 algorithm is the most frequently used for ballistic calculators, and we continue to recommend it.  This is the default `pyballistic` engine.
 * **`euler_engine`:**  Euler's method is the most simple integration algorithm, which will be recognizable to any calculus student.  However, it is a first-order method with well known limitations and therefore recommended only for study.
 * **`verlet_engine`**: The velocity Verlet algorithm is a second-order integrator with the distinctive property of being _symplectic_, which makes it an excellent choice for modelling physical systems that should conserve energy.  It excels in a vacuum scenario ([`examples/BenchmarkVacuumTraj.ipynb`][BenchmarkVacuumTraj.ipynb]), but otherwise its performance is similar to the simpler Euler method: A ballistic trajectory with air resistance is a _dissipative system_ because energy is lost to drag. The Verlet method's strengths are in non-dissipative, time-reversible systems.
 
@@ -73,7 +73,7 @@ SciPy is something of a black box: one cannot be certain exactly how it will pro
 
 
 [BenchmarkEngines.ipynb]:
-https://github.com/o-murphy/py_ballisticcalc/blob/master/examples/BenchmarkEngines.ipynb
+https://github.com/dbookstaber/pyballistic/blob/master/examples/BenchmarkEngines.ipynb
 
 [BenchmarkVacuumTraj.ipynb]:
-https://github.com/o-murphy/py_ballisticcalc/blob/master/examples/BenchmarkVacuumTraj.ipynb
+https://github.com/dbookstaber/pyballistic/blob/master/examples/BenchmarkVacuumTraj.ipynb

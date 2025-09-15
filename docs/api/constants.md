@@ -1,4 +1,4 @@
-::: py_ballisticcalc.constants
+::: pyballistic.constants
     options:
         group_by_category: false
         members:

@@ -1,1 +1,1 @@
-::: py_ballisticcalc.munition.Ammo
+::: pyballistic.munition.Ammo

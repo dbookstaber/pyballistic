@@ -1,8 +1,8 @@
 import math
 import pytest
 
-from py_ballisticcalc import drag_tables as _drag_tables_mod
-from py_ballisticcalc.drag_model import make_data_points
+from pyballistic import drag_tables as _drag_tables_mod
+from pyballistic.drag_model import make_data_points
 
 
 def _discover_drag_tables():

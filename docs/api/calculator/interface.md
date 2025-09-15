@@ -1,3 +1,3 @@
-::: py_ballisticcalc.interface.Calculator
+::: pyballistic.interface.Calculator
     options:
         filters: ["!^_", "!^cdm"]

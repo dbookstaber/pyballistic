@@ -1,4 +1,4 @@
-# py_ballisticcalc QuickStart
+# pyballistic QuickStart
 
 This QuickStart gets you from a fresh environment to running basic ballistic calculations.
 
@@ -10,24 +10,24 @@ This QuickStart gets you from a fresh environment to running basic ballistic cal
 
 === "pip"
     ```bash
-    pip install py-ballisticcalc
+    pip install pyballistic
     ```
     
 === "uv"
     ```bash
-    uv add py-ballisticcalc
+    uv add pyballistic
     ```
 
 - With performance extensions (recommended for production/benchmarks):
 
 === "pip"
     ```bash
-    pip install py-ballisticcalc[exts]
+    pip install pyballistic[exts]
     ```
     
 === "uv"
     ```bash
-    uv add py-ballisticcalc[exts]
+    uv add pyballistic[exts]
     ```
 
 - From local sources (editable), useful when developing or running tests:
@@ -36,7 +36,7 @@ This QuickStart gets you from a fresh environment to running basic ballistic cal
     ```bash
     # from repo root
     py -m pip install -e .[dev]                        # main package editable
-    py -m pip install -e ./py_ballisticcalc.exts[dev]  # build/install C extensions (optional)
+    py -m pip install -e ./pyballistic.exts[dev]  # build/install C extensions (optional)
     ```
 
 === "uv"
@@ -51,7 +51,7 @@ This QuickStart gets you from a fresh environment to running basic ballistic cal
 ### Simple Zero
 
 ```python
-from py_ballisticcalc import *
+from pyballistic import *
 
 # Define a standard .308 Winchester shot: G7 BC=0.22, muzzle velocity = 2600fps
 zero = Shot(weapon=Weapon(sight_height=2), ammo=Ammo(DragModel(0.22, TableG7), mv=Velocity.FPS(2600)))
@@ -88,4 +88,4 @@ See `examples\Examples.ipynb` and `examples\ExtremeExamples.ipynb` for more deta
 
 
 ## Support / Issues
-- [Open an issue on the GitHub repository](https://github.com/o-murphy/py-ballisticcalc/issues) if you encounter bugs or unexpected behavior.
+- [Open an issue on the GitHub repository](https://github.com/dbookstaber/pyballistic/issues) if you encounter bugs or unexpected behavior.

@@ -26,7 +26,7 @@ jobs:
       run: uv pip install -e .[dev]
 
     - name: Run coverage
-      run: pytest tests --cov=py_ballisticcalc --cov-report=html
+      run: pytest tests --cov=pyballistic --cov-report=html
 
 #    - name: Install "coverage-badge"
 #      run: uv pip install coverage-badge

@@ -2,7 +2,7 @@
 
 ???+ api "API Documentation"
 
-    [`py_ballisticcalc.drag_model`][py_ballisticcalc.drag_model]<br>
+    [`pyballistic.drag_model`][pyballistic.drag_model]<br>
 
 The drag subsystem models aerodynamic resistance via Ballistic Coefficients referencing standard drag model tables (G1, G7, etc.), or custom Mach–$C_d$ pairs.
 

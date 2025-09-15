@@ -2,7 +2,7 @@ from math import fabs
 
 import pytest
 
-from py_ballisticcalc import *
+from pyballistic import *
 
 pytestmark = pytest.mark.engine
 

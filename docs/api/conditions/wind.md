@@ -1,1 +1,1 @@
-::: py_ballisticcalc.conditions.Wind
+::: pyballistic.conditions.Wind

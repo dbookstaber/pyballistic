@@ -1,24 +1,24 @@
 ??? api "API Documentation"
 
-    [`py_ballisticcalc.munition.Weapon`][py_ballisticcalc.munition.Weapon]
+    [`pyballistic.munition.Weapon`][pyballistic.munition.Weapon]
 
 A `Weapon` instance is a mutable object that describes all details of a gun that can affect a trajectory.
 
 ## Weapon properties
 
-* [`sight_height`][py_ballisticcalc.munition.Weapon.sight_height]: Sight height, which is the distance between the line of sight and barrel center at the muzzle, measured perpendicular to the line of sight as shown in the following figure:![How to measure sight height](SightHeight.png)
+* [`sight_height`][pyballistic.munition.Weapon.sight_height]: Sight height, which is the distance between the line of sight and barrel center at the muzzle, measured perpendicular to the line of sight as shown in the following figure:![How to measure sight height](SightHeight.png)
 
-* [`sight`][py_ballisticcalc.munition.Sight]: Sight details for converting adjustments into click values.
+* [`sight`][pyballistic.munition.Sight]: Sight details for converting adjustments into click values.
 
-* [`twist`][py_ballisticcalc.munition.Weapon.twist]: Twist rate of barrel rifling, in terms of length to complete 1 rotation.  Positive values indicate right-hand twist, negative values indicate left-hand twist.
+* [`twist`][pyballistic.munition.Weapon.twist]: Twist rate of barrel rifling, in terms of length to complete 1 rotation.  Positive values indicate right-hand twist, negative values indicate left-hand twist.
 
-* [`zero_elevation`][py_ballisticcalc.munition.Weapon.zero_elevation]: Angle of barrel centerline relative to line of sight when the sight is set to "zero." 
+* [`zero_elevation`][pyballistic.munition.Weapon.zero_elevation]: Angle of barrel centerline relative to line of sight when the sight is set to "zero." 
 
 ## Example
 
 Imports:
 ```python
-from py_ballisticcalc import Weapon, Unit, Sight
+from pyballistic import Weapon, Unit, Sight
 ```
 
 Then create a Weapon instance:
@@ -34,5 +34,5 @@ weapon = Weapon(
     )
 )
 ```
-In this example, we use calls to [Unit][py_ballisticcalc.unit.Unit] to initialize [Weapon][py_ballisticcalc.munition.Weapon] fields with specific unit types.
-We also can do it using `float` values, in which case those attributes will be initialized with unit types defined by [`PreferredUnits`][py_ballisticcalc.unit.PreferredUnits] class.
+In this example, we use calls to [Unit][pyballistic.unit.Unit] to initialize [Weapon][pyballistic.munition.Weapon] fields with specific unit types.
+We also can do it using `float` values, in which case those attributes will be initialized with unit types defined by [`PreferredUnits`][pyballistic.unit.PreferredUnits] class.

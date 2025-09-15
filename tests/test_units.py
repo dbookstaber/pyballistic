@@ -1,7 +1,7 @@
 import pytest
 
-from py_ballisticcalc import loadImperialUnits, loadMixedUnits, loadMetricUnits
-from py_ballisticcalc.unit import *
+from pyballistic import loadImperialUnits, loadMixedUnits, loadMetricUnits
+from pyballistic.unit import *
 
 
 # Helper function adapted for direct use in parameterized tests

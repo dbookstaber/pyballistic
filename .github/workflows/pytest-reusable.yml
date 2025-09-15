@@ -51,7 +51,7 @@ jobs:
         if: startsWith(inputs.engine_name, 'cythonized_')
         run: |
           echo "Detected Cythonized engine. Building extensions..."
-          uv pip install -e ./py_ballisticcalc.exts
+          uv pip install -e ./pyballistic.exts
         shell: bash # Ensure this command runs in a bash shell environment
 
       - name: Run tests with ${{ inputs.engine_name }}

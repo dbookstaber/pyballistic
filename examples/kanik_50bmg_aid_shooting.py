@@ -1,7 +1,7 @@
 """Example of library usage"""
 import math
 
-from py_ballisticcalc import *
+from pyballistic import *
 
 
 # set global library settings

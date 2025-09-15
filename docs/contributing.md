@@ -1,39 +1,39 @@
-We'd love for you to contribute to py_ballisticcalc!
+We'd love for you to contribute to pyballistic!
 
 ## Issues
 
 Questions, feature requests and bug reports are all welcome
-as [discussions or issues](https://github.com/o-murphy/py-ballisticcalc/issues/new/choose).
+as [discussions or issues](https://github.com/dbookstaber/pyballistic/issues/new/choose).
 
-[//]: # (**However, to report a security vulnerability, please see our [security policy]&#40;https://github.com/o-murphy/py-ballisticcalc/security/policy&#41;.**)
+[//]: # (**However, to report a security vulnerability, please see our [security policy]&#40;https://github.com/dbookstaber/pyballistic/security/policy&#41;.**)
 
 To make it as simple as possible for us to help you, please include the output of the following call in your issue:
 
 ```bash
-python -c "from importlib.metadata import metadata; print(metadata('py-ballisticcalc')['Version'])"
+python -c "from importlib.metadata import metadata; print(metadata('pyballistic')['Version'])"
 ```
 
-Please try to always include the above unless you're unable to install py-ballisticcalc or **know** it's not relevant
+Please try to always include the above unless you're unable to install pyballistic or **know** it's not relevant
 to your question or feature request.
 
 ## Pull Requests
 
 It should be extremely simple to get started and create a Pull Request.
-py-ballisticcalc is released regularly so you should see your improvements release in a matter of days or weeks 🚀.
+pyballistic is released regularly so you should see your improvements release in a matter of days or weeks 🚀.
 
 Unless your change is trivial (typo, docs tweak etc.), please create an issue to discuss the change before
 creating a pull request.
 
 If you're looking for something to get your teeth into, check out the
-["help wanted"](https://github.com/o-murphy/py-ballisticcalc/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
+["help wanted"](https://github.com/dbookstaber/pyballistic/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
 label on github.
 
 To make contributing as easy and fast as possible, you'll want to run tests and linting locally. Luckily,
-py-ballisticcalc has few dependencies, and tests don't need access to databases, etc.
+pyballistic has few dependencies, and tests don't need access to databases, etc.
 Because of this, setting up and running the tests should be very simple.
 
 !!! note
-    For high performance, [the py-ballisticcalc.exts subproject](internals/cython.md) requires [cython](https://cython.readthedocs.io/en/latest/src/quickstart/install.html) to create compiled calculation engines.
+    For high performance, [the pyballistic.exts subproject](internals/cython.md) requires [cython](https://cython.readthedocs.io/en/latest/src/quickstart/install.html) to create compiled calculation engines.
 
 ### Prerequisites
 
@@ -49,8 +49,8 @@ Fork the repository on GitHub and clone your fork locally.
 
 ```bash
 # Clone your fork and cd into the repo directory
-git clone git@github.com:<your username>/py-ballisticcalc.git
-cd py-ballisticcalc
+git clone git@github.com:<your username>/pyballistic.git
+cd pyballistic
 ```
 
 === "pip"
@@ -75,7 +75,7 @@ If you want to contribute to cythonized extensions you can also install them in 
 
 === "pip"
     ```bash
-    pip install -e ./py_ballisticcalc.exts[dev]
+    pip install -e ./pyballistic.exts[dev]
     ```
 
 === "uv"
@@ -115,15 +115,15 @@ pytest --engine="my_lib.my_engine:MyEngineClass"  # via entry point path
 #### Coverage
 We use `pytest-cov` to get coverage reports:
 ```shell
-pytest --cov=py_ballisticcalc --cov-report=html  # for default engine
-pytest --cov=py_ballisticcalc --cov-report=html --engine="scipy_engine"  # for custom engine 
+pytest --cov=pyballistic --cov-report=html  # for default engine
+pytest --cov=pyballistic --cov-report=html --engine="scipy_engine"  # for custom engine 
 ```
 
-To get coverage of Cython, set the environment variable `CYTHON_COVERAGE = '1'`, rebuild `py_ballisticcalc.exts` (from project root: `pip install -e py_ballisticcalc.exts`), then run:
+To get coverage of Cython, set the environment variable `CYTHON_COVERAGE = '1'`, rebuild `pyballistic.exts` (from project root: `pip install -e pyballistic.exts`), then run:
 
 ```shell
 python scripts/sync_cython_sources.py
-pytest --engine="cythonized_rk4_engine" --cov=py_ballisticcalc --cov=py_ballisticcalc_exts --cov-report=html
+pytest --engine="cythonized_rk4_engine" --cov=pyballistic --cov=pyballistic_exts --cov-report=html
 ```
 
 #### Cython extensions: safety & stress
@@ -137,13 +137,13 @@ $env:CYTHON_SAFETY = '1'
 $env:CYTHON_FORCE_REGEN = '1'
 
 # Reinstall extensions in editable mode (from project root)
-pip install -e ./py_ballisticcalc.exts
+pip install -e ./pyballistic.exts
 
 # Run extension test suite (stress tests excluded by default via markers)
-pytest ./py_ballisticcalc.exts\tests -q
+pytest ./pyballistic.exts\tests -q
 
 # Run only the stress tests (opt-in). These are longer and more memory-heavy.
-pytest ./py_ballisticcalc.exts\tests -m stress -q
+pytest ./pyballistic.exts\tests -m stress -q
 
 # Clear env after testing
 Remove-Item Env:CYTHON_SAFETY; Remove-Item Env:CYTHON_FORCE_REGEN
@@ -204,18 +204,18 @@ In general, documentation should be written in a friendly, approachable style. I
 
 ### Code documentation
 
-When contributing to py-ballisticcalc, please make sure that all code is well documented. The following should be documented using properly formatted docstrings:
+When contributing to pyballistic, please make sure that all code is well documented. The following should be documented using properly formatted docstrings:
 
 - Modules
 - Class definitions
 - Function definitions
 - Module-level variables
 
-py-ballisticcalc
+pyballistic
 uses [Google-style docstrings](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings) formatted according to [PEP 257](https://www.python.org/dev/peps/pep-0257/) guidelines. (See [Example Google Style Python Docstrings](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html)
 for further examples.)
 
-[pydocstyle](https://www.pydocstyle.org/en/stable/index.html) is used for linting docstrings. You can run `pydocstyle ./py_ballisticcalc\` to check your docstrings.
+[pydocstyle](https://www.pydocstyle.org/en/stable/index.html) is used for linting docstrings. You can run `pydocstyle ./pyballistic\` to check your docstrings.
 
 Where this is a conflict between Google-style docstrings and pydocstyle linting, follow the pydocstyle linting hints.
 

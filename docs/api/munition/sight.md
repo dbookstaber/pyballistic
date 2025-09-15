@@ -1,5 +1,5 @@
-::: py_ballisticcalc.munition.Sight
+::: pyballistic.munition.Sight
 
-::: py_ballisticcalc.munition.SightClicks
+::: pyballistic.munition.SightClicks
 
-::: py_ballisticcalc.munition.SightReticleStep
+::: pyballistic.munition.SightReticleStep

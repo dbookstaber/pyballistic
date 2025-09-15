@@ -33,4 +33,4 @@ jobs:
 
     - name: Analysing the code with pylint
       run: |
-        pylint ./py_ballisticcalc 
+        pylint ./pyballistic 

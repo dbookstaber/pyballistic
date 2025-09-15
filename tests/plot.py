@@ -1,7 +1,7 @@
 import matplotlib
 
-from py_ballisticcalc import *
-from py_ballisticcalc.visualize.plot import show_hit_result_plot
+from pyballistic import *
+from pyballistic.visualize.plot import show_hit_result_plot
 
 PreferredUnits.velocity = Velocity.MPS
 

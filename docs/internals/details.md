@@ -9,7 +9,7 @@ This page is for contributors who want to modify algorithms, add engines, or ext
 uv sync --python 3.13 --dev --extra exts
 
 # install editable local packages into the active venv
-uv pip install -e ./py_ballisticcalc.exts
+uv pip install -e ./pyballistic.exts
 uv pip install -e .
 
 # activate & test
@@ -21,7 +21,7 @@ python -m pytest tests --engine="rk4_engine"
 **Notes:**
 
 - The repo includes a `sitecustomize.py` that disables user site-packages and warns if you are not using the local `.venv`, to prevent stale/external packages from shadowing your build.
-- If you prefer pip, using `python -m pip install -e ./py_ballisticcalc.exts` (then `python -m pip install -e .`) works fine when the venv is activated.
+- If you prefer pip, using `python -m pip install -e ./pyballistic.exts` (then `python -m pip install -e .`) works fine when the venv is activated.
 
 ## CI and `uv.lock`
 Development dependencies and reproducible developer/CI installs are pinned in `uv.lock`.
@@ -30,15 +30,15 @@ Development dependencies and reproducible developer/CI installs are pinned in `u
 * If you use `uv` for environment management, run `uv sync --dev` (optionally with `--extra exts` to install the Cython subproject) to produce the locked environment used by CI.
 
 ## Code locations & responsibilities
-- `py_ballisticcalc/` — core Python package.
+- `pyballistic/` — core Python package.
     - `engines/` — Python engine implementations and `TrajectoryDataFilter`.
     - `trajectory_data.py` — `BaseTrajData`, `TrajectoryData`, `HitResult`, `TrajFlag`, interpolation helpers.
     - `conditions.py`, `munition.py` — shot and environment objects.
     - `drag_model.py`, `drag_tables.py` — drag lookup and interpolation.
-- `py_ballisticcalc.exts/` — Cython subproject.
-    - `py_ballisticcalc_exts/base_engine.pyx` — Cython wrapper that orchestrates C-layer stepping and defers event logic to Python.
-    - `py_ballisticcalc_exts/` `rk4_engine.pyx`, `euler_engine.pyx` — Cython engine implementations.
-    - `py_ballisticcalc_exts/cy_bindings.pyx/.pxd` — helper functions and bridging helpers for C structs.
+- `pyballistic.exts/` — Cython subproject.
+    - `pyballistic_exts/base_engine.pyx` — Cython wrapper that orchestrates C-layer stepping and defers event logic to Python.
+    - `pyballistic_exts/` `rk4_engine.pyx`, `euler_engine.pyx` — Cython engine implementations.
+    - `pyballistic_exts/cy_bindings.pyx/.pxd` — helper functions and bridging helpers for C structs.
 
 ## How engines are wired
 Public call flow (simplified):
@@ -64,7 +64,7 @@ Public call flow (simplified):
 
 ```bash
 # optional: install editable C extensions and main package
-py -m pip install -e ./py_ballisticcalc.exts
+py -m pip install -e ./pyballistic.exts
 py -m pip install -e .
 
 # run a single test file

@@ -1,12 +1,12 @@
 # Our People
 
-py-ballisticcalc has an amazing community of contributors, reviewers, and experts that help propel the project forward.
+pyballistic has an amazing community of contributors, reviewers, and experts that help propel the project forward.
 Here, we celebrate those people and their contributions.
 
 ## Contributors
 **This project exists thanks to all the people who contribute.**
 
-<a href="https://github.com/o-murphy/py_ballisticcalc/graphs/contributors"><img height=32 src="https://contrib.rocks/image?repo=o-murphy/py_ballisticcalc" /></a>
+<a href="https://github.com/dbookstaber/pyballistic/graphs/contributors"><img height=32 src="https://contrib.rocks/image?repo=o-murphy/pyballistic" /></a>
 
 Special thanks to:
 

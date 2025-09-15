@@ -35,7 +35,7 @@ def main() -> None:
     run(["uv", "sync", f"--python={py}", "--dev", "--extra", "exts"])  # relies on [tool.uv.sources]
 
     # Force editable installs of local projects into the target venv
-    run(["uv", "pip", "install", "-p", str(venv), "-e", str(repo / "py_ballisticcalc.exts")])
+    run(["uv", "pip", "install", "-p", str(venv), "-e", str(repo / "pyballistic.exts")])
     run(["uv", "pip", "install", "-p", str(venv), "-e", str(repo)])
 
     print("\nDev environment ready.")

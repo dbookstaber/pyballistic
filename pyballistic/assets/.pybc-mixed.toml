@@ -1,0 +1,26 @@
+# Mixed Unit configuration for pyballistic:
+# Metric units for distance, velocity, target, atmosphere;
+# Imperial for bullet and gun dimensions.
+
+title = "pyballistic config"
+version = "2.2.0"
+
+[pybc.preferred_units]
+# mkdocs.pymdown.snippet marker: --8<-- [start:pybc-mixed]
+angular = 'Degree'
+distance = 'Meter'
+velocity = 'MPS'
+pressure = 'Bar'
+temperature = 'Celsius'
+diameter = 'Inch'
+length = 'Inch'
+weight = 'Grain'
+adjustment = 'Mil'
+drop = 'Centimeter'
+energy = 'FootPound'
+ogw = 'Kilogram'
+sight_height = 'Inch'
+target_height = 'Meter'
+twist = 'Inch'
+time = 'Second'
+# --8<-- [end:pybc-mixed]

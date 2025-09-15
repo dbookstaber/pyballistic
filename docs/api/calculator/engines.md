@@ -1,29 +1,29 @@
-::: py_ballisticcalc.engines.base_engine.BaseIntegrationEngine
+::: pyballistic.engines.base_engine.BaseIntegrationEngine
 
-::: py_ballisticcalc.engines.base_engine.BaseEngineConfigDict
+::: pyballistic.engines.base_engine.BaseEngineConfigDict
 
-::: py_ballisticcalc.engines.RK4IntegrationEngine
+::: pyballistic.engines.RK4IntegrationEngine
     options:
         show_docstring_examples: false
         members: false
         show_docstring_attributes: false
         docstring_section_style: list
 
-::: py_ballisticcalc.engines.EulerIntegrationEngine
+::: pyballistic.engines.EulerIntegrationEngine
     options:
         show_docstring_examples: false
         members: false
         show_docstring_attributes: false
         docstring_section_style: list
 
-::: py_ballisticcalc.engines.VelocityVerletIntegrationEngine
+::: pyballistic.engines.VelocityVerletIntegrationEngine
     options:
         show_docstring_examples: false
         members: false
         show_docstring_attributes: false
         docstring_section_style: list
 
-::: py_ballisticcalc.engines.SciPyIntegrationEngine
+::: pyballistic.engines.SciPyIntegrationEngine
     options:
         show_docstring_examples: false
         members: false

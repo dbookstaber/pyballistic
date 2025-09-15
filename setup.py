@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-"""setup.py script for py_ballisticcalc library"""
+"""setup.py script for pyballistic library"""
 
 from setuptools import setup
 

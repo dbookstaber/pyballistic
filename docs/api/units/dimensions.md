@@ -1,34 +1,34 @@
-::: py_ballisticcalc.unit.Unit
+::: pyballistic.unit.Unit
 
-::: py_ballisticcalc.unit.GenericDimension
+::: pyballistic.unit.GenericDimension
 
-::: py_ballisticcalc.unit.counter
+::: pyballistic.unit.counter
 
-::: py_ballisticcalc.unit.iterator
+::: pyballistic.unit.iterator
 
-::: py_ballisticcalc.unit.Angular
+::: pyballistic.unit.Angular
 
-::: py_ballisticcalc.unit.Distance
+::: pyballistic.unit.Distance
 
-::: py_ballisticcalc.unit.Energy
+::: pyballistic.unit.Energy
 
-::: py_ballisticcalc.unit.Pressure
+::: pyballistic.unit.Pressure
 
-::: py_ballisticcalc.unit.Temperature
+::: pyballistic.unit.Temperature
 
-::: py_ballisticcalc.unit.Time
+::: pyballistic.unit.Time
 
-::: py_ballisticcalc.unit.Velocity
+::: pyballistic.unit.Velocity
 
-::: py_ballisticcalc.unit.Weight
+::: pyballistic.unit.Weight
 
-::: py_ballisticcalc.unit.UnitAliases
+::: pyballistic.unit.UnitAliases
     options:
         show_signature: false
         separate_signature: false
-        show_attribute_values: false
         show_signature_annotations: false
+        show_attribute_values: false
 
 ```python
---8<-- "py_ballisticcalc/unit.py:UnitAliases"
+--8<-- "pyballistic/unit.py:UnitAliases"
 ```

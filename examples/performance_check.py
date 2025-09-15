@@ -45,11 +45,11 @@ cythonized:
         Execution rate: 10.47 calls per second
 """
 from timeit import timeit
-from py_ballisticcalc import *
-from py_ballisticcalc.logger import logger
+from pyballistic import *
+from pyballistic.logger import logger
 import logging
 
-from py_ballisticcalc.interface import _EngineLoader
+from pyballistic.interface import _EngineLoader
 
 logger.setLevel(logging.INFO)
 
@@ -165,7 +165,7 @@ for ep in _EngineLoader.iter_engines():
     print()
 
 
-# Engine: py_ballisticcalc_exts:CythonizedEulerIntegrationEngine
+# Engine: pyballistic_exts:CythonizedEulerIntegrationEngine
 # Calculate barrel elevation at distance 100.0m 120 times:
 # Total time: 0.066933 seconds
 # Execution rate: 1792.83 calls per second
@@ -177,7 +177,7 @@ for ep in _EngineLoader.iter_engines():
 # Execution rate: 526.41 calls per second
 #
 #
-# Engine: py_ballisticcalc_exts:CythonizedRK4IntegrationEngine
+# Engine: pyballistic_exts:CythonizedRK4IntegrationEngine
 # Calculate barrel elevation at distance 100.0m 120 times:
 # Total time: 0.060389 seconds
 # Execution rate: 1987.11 calls per second
@@ -189,7 +189,7 @@ for ep in _EngineLoader.iter_engines():
 # Execution rate: 667.40 calls per second
 
 
-# Engine: py_ballisticcalc_exts:CythonizedEulerIntegrationEngine
+# Engine: pyballistic_exts:CythonizedEulerIntegrationEngine
 # Calculate barrel elevation at distance 100.0m 120 times:
 # Total time: 0.042595 seconds
 # Execution rate: 2817.23 calls per second
@@ -201,7 +201,7 @@ for ep in _EngineLoader.iter_engines():
 # Execution rate: 790.49 calls per second
 #
 #
-# Engine: py_ballisticcalc_exts:CythonizedRK4IntegrationEngine
+# Engine: pyballistic_exts:CythonizedRK4IntegrationEngine
 # Calculate barrel elevation at distance 100.0m 120 times:
 # Total time: 0.037839 seconds
 # Execution rate: 3171.34 calls per second

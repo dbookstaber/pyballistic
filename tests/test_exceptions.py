@@ -2,9 +2,9 @@ import types
 
 import pytest
 
-from py_ballisticcalc.exceptions import ZeroFindingError, RangeError, OutOfRangeError
-from py_ballisticcalc.trajectory_data import TrajectoryData, TrajFlag
-from py_ballisticcalc.unit import Angular, Distance, Velocity, Energy, Weight
+from pyballistic.exceptions import ZeroFindingError, RangeError, OutOfRangeError
+from pyballistic.trajectory_data import TrajectoryData, TrajFlag
+from pyballistic.unit import Angular, Distance, Velocity, Energy, Weight
 
 pytestmark = pytest.mark.extended
 

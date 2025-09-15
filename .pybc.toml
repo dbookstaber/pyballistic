@@ -1,6 +1,6 @@
-# Config template for py_ballisticcalc
+# Config template for pyballistic
 
-title = "standard py_ballisticcalc config template"
+title = "standard pyballistic config template"
 version = "2.2.0"
 
 [pybc.preferred_units]

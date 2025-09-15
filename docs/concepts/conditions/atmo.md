@@ -4,4 +4,4 @@ Atmospheric state to compute air density and local speed of sound (Mach 1). Supp
 
 ???+ api "API Documentation"
 
-    [`py_ballisticcalc.conditions.Atmo`][py_ballisticcalc.conditions.Atmo]<br>
+    [`pyballistic.conditions.Atmo`][pyballistic.conditions.Atmo]<br>

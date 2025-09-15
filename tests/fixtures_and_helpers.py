@@ -1,6 +1,6 @@
 import pytest
 
-from py_ballisticcalc import (HitResult, Distance, BaseEngineConfigDict, Calculator, DragModel, TableG1, TableG7,
+from pyballistic import (HitResult, Distance, BaseEngineConfigDict, Calculator, DragModel, TableG1, TableG7,
                               Weight, Velocity, Ammo, Shot, Angular)
 
 

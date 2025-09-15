@@ -1,1 +1,1 @@
-::: py_ballisticcalc.generics.engine.EngineProtocol
+::: pyballistic.generics.engine.EngineProtocol

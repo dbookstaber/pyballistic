@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from py_ballisticcalc.interface import Calculator, _EngineLoader
+from pyballistic.interface import Calculator, _EngineLoader
 
 pytestmark = pytest.mark.extended
 

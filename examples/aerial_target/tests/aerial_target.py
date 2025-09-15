@@ -4,7 +4,7 @@ import warnings
 from concurrent import futures
 
 from aerial_target.aerial_target import AerialTarget
-from py_ballisticcalc import *
+from pyballistic import *
 
 logger.setLevel(logging.DEBUG)
 

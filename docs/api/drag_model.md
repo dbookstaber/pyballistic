@@ -1,1 +1,1 @@
-::: py_ballisticcalc.drag_model
+::: pyballistic.drag_model

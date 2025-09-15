@@ -2,7 +2,7 @@
 
 ???+ api "API Documentation"
 
-    [`py_ballisticcalc.vector.Vector`][py_ballisticcalc.vector.Vector]<br>
+    [`pyballistic.vector.Vector`][pyballistic.vector.Vector]<br>
 
 Immutable 3D vector used for positions and velocities in internal engine calculations. Provides magnitude, dot product, normalization, and arithmetic.
 
@@ -16,7 +16,7 @@ Immutable 3D vector used for positions and velocities in internal engine calcula
 
 ## Sample Usage
     ```python
-    from py_ballisticcalc import Vector
+    from pyballistic import Vector
     
     # Create position vector
     position = Vector(100.0, 50.0, 0.0)

@@ -1,5 +1,5 @@
-::: py_ballisticcalc.trajectory_data.TrajFlag
+::: pyballistic.trajectory_data.TrajFlag
 
-::: py_ballisticcalc.trajectory_data.BaseTrajData
+::: pyballistic.trajectory_data.BaseTrajData
 
-::: py_ballisticcalc.trajectory_data.TrajectoryData
+::: pyballistic.trajectory_data.TrajectoryData

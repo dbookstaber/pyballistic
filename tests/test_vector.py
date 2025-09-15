@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from py_ballisticcalc import Vector
+from pyballistic import Vector
 
 
 class TestVector:

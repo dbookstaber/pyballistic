@@ -3,7 +3,7 @@ import datetime
 import math
 import random
 
-from py_ballisticcalc import Calculator, SciPyEngineConfigDict, Distance, Velocity, DragModel, TableG1, \
+from pyballistic import Calculator, SciPyEngineConfigDict, Distance, Velocity, DragModel, TableG1, \
     Weight, Ammo, Weapon, Shot, Angular, RangeError, TrajFlag, HitResult, OutOfRangeError, ZeroFindingError
 
 

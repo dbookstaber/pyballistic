@@ -1,1 +1,1 @@
-::: py_ballisticcalc.vector.Vector
+::: pyballistic.vector.Vector
