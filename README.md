@@ -7,7 +7,6 @@ This repo offers [`py_ballisticcalc`](https://github.com/o-murphy/py-ballisticca
 [![license]][LGPL-3]
 [![pypi]][PyPiUrl]
 [![downloads]][pepy]
-[![downloads/month]][pepy]
 [![coverage]][coverage]
 [![py-versions]][sources]
 [![Made in Ukraine]][SWUBadge]
@@ -40,9 +39,6 @@ https://pypi.org/project/pyballistic/#history
 [downloads]:
 https://img.shields.io/pepy/dt/pyballistic?style=flat-square
 
-[downloads/month]:
-https://static.pepy.tech/personalized-badge/pyballistic?style=flat-square&period=month&units=abbreviation&left_color=grey&right_color=blue&left_text=downloads%2Fmonth
-
 [pepy]:
 https://pepy.tech/project/pyballistic
 
@@ -54,6 +50,10 @@ https://img.shields.io/badge/made_in-Ukraine-ffd700.svg?labelColor=0057b7&style=
 
 [SWUBadge]:
 https://stand-with-ukraine.pp.ua
+
+[DOCUMENTATION]:
+https://dbookstaber.github.io/pyballistic
+
 
 ### Contents
 
@@ -69,6 +69,9 @@ https://stand-with-ukraine.pp.ua
     * [Ballistic Concepts](#ballistic-concepts)
     * [Units](#units)
     * [Calculation Engines](#calculation-engines)
+
+* **[Documentation][DOCUMENTATION]**
+
 
 # Installation
 
