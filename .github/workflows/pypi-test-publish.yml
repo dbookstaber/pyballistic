@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install build cibuildwheel twine 
+          python -m pip install build cibuildwheel
 
       - name: Build pure python package
         run: python -m build
