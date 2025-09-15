@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyballistic"
-version = "2.2.0rc1"
+version = "2.2.0"
 
 authors = [
     { name = "o-murphy", email = "thehelixpg@gmail.com" },
@@ -82,7 +82,7 @@ line-length = 120
 "pyballistic.exts" = { path = "./pyballistic.exts" }  # required for `uv sync`
 
 [project.optional-dependencies]
-exts = ["pyballistic.exts==2.2.0rc1"]
+exts = ["pyballistic.exts==2.2.0"]
 charts = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
 visualize = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
 scipy = ["numpy>=2", "scipy>=1.13.1"]
@@ -106,17 +106,17 @@ dev = [
     "ruff>=0.12.3",
 ]
 docs = [
-    'mkdocs-mermaid2-plugin',
-    'mkdocs',
-    'mkdocs-exclude',
-    'mkdocs-material[imaging]',
-    'mkdocs-redirects',
-    # Pin mkdocstrings to versions that support show_attribute_values
-    'mkdocstrings>=0.29.0',
-    'mkdocstrings-python>=1.16.0',
-    'mkdocs-autorefs',
-    'mike',
-    'pydocstyle',
+    "mkdocs-mermaid2-plugin",
+    "mkdocs",
+    "mkdocs-exclude",
+    "mkdocs-material[imaging]",
+    "mkdocs-redirects",
+    "mkdocstrings>=0.29.0",
+    "mkdocstrings-python>=1.16.0",
+    "mkdocs-autorefs",
+    "mike",
+    "pydocstyle",
+    "ruff",
 ]
 
 [dependency-groups]

@@ -2206,7 +2206,7 @@ wheels = [
 
 [[package]]
 name = "pyballistic"
-version = "2.2.0rc1"
+version = "2.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "deprecated" },
@@ -2358,7 +2358,7 @@ dev = [
 
 [[package]]
 name = "pyballistic-exts"
-version = "2.2.0rc1"
+version = "2.2.0"
 source = { directory = "pyballistic.exts" }
 
 [package.metadata]

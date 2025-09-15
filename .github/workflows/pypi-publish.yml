@@ -98,13 +98,24 @@ jobs:
       - name: List ./dist
         run: ls ./dist
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: ./dist
+      - name: Split dists for core and exts
+        run: |
+          mkdir -p dist-core dist-exts
+          # Copy core package files
+          for f in dist/pyballistic-*; do cp "$f" dist-core/ 2>/dev/null || true; done
+          # Copy extensions package files
+          for f in dist/pyballistic.exts-*; do cp "$f" dist-exts/ 2>/dev/null || true; done
+          echo "Core dists:" && ls -la dist-core || true
+          echo "Exts dists:" && ls -la dist-exts || true
 
-      - name: Publish package distributions to PyPI
+      - name: Publish core package (pyballistic)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          packages-dir: dist-core
+          skip-existing: true
+
+      - name: Publish extensions package (pyballistic.exts)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-exts
           skip-existing: true

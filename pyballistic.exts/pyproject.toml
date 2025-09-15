@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyballistic.exts"
-version = "2.2.0rc1"
+version = "2.2.0"
 
 authors = [
     { name="o-murphy", email="thehelixpg@gmail.com" },
