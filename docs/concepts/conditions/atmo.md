@@ -1,3 +1,7 @@
-??? api "API Documentation"
+# Atmosphere (Atmo)
 
-    [`py_ballisticcalc.conditions.Atmo`][py_ballisticcalc.conditions.Atmo]<br>
+Atmospheric state to compute air density and local speed of sound (Mach 1). Supports ICAO standard atmosphere by altitude and custom pressure/temperature/humidity.
+
+???+ api "API Documentation"
+
+    [`pyballistic.conditions.Atmo`][pyballistic.conditions.Atmo]<br>

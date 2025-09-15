@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from py_ballisticcalc import (basicConfig, PreferredUnits, Unit, loadMixedUnits, loadMetricUnits, loadImperialUnits)
+from pyballistic import (basicConfig, PreferredUnits, Unit, loadMixedUnits, loadMetricUnits, loadImperialUnits)
 
 ASSETS_DIR = os.path.join(
     os.path.dirname(

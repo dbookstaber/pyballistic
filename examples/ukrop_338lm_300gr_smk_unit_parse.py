@@ -1,7 +1,7 @@
 """Example of library usage"""
 
-from py_ballisticcalc import *
-from py_ballisticcalc.unit import _parse_value, _parse_unit
+from pyballistic import *
+from pyballistic.unit import _parse_value, _parse_unit
 
 # set global library settings
 PreferredUnits.velocity = Velocity.MPS

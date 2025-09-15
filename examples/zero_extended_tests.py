@@ -1,7 +1,7 @@
 import math
 import pytest
 
-from py_ballisticcalc import (
+from pyballistic import (
     SciPyEngineConfigDict,
     Calculator,
     DragModel,

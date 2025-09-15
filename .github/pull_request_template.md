@@ -1,4 +1,4 @@
-Pull Request Guidelines for py-ballisticcalc
+Pull Request Guidelines for pyballistic
 ---------------------------------
 
 Before you submit a pull request, check that it meets these guidelines:

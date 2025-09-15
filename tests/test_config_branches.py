@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from py_ballisticcalc import basicConfig, PreferredUnits, Unit
+from pyballistic import basicConfig, PreferredUnits, Unit
 
 pytestmark = pytest.mark.extended
 

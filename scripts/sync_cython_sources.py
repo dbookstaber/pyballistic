@@ -2,7 +2,7 @@
 Mirror Cython sources to a stable location for coverage reporting.
 
 This script:
-1) Copies .pyx/.pxd from py_ballisticcalc.exts/py_ballisticcalc_exts/ to repo-root py_ballisticcalc_exts/
+1) Copies .pyx/.pxd from pyballistic.exts/pyballistic_exts/ to repo-root pyballistic_exts/
 2) If present, also copies generated C files from the subproject build dir next to the mirrored sources,
    so the Cython coverage plugin can parse C comments to reconstruct original .pyx lines at report time.
 """
@@ -12,8 +12,8 @@ import shutil
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = REPO_ROOT / 'py_ballisticcalc.exts' / 'py_ballisticcalc_exts'
-MIRROR_DIR = REPO_ROOT / 'py_ballisticcalc_exts'
+SRC_DIR = REPO_ROOT / 'pyballistic.exts' / 'pyballistic_exts'
+MIRROR_DIR = REPO_ROOT / 'pyballistic_exts'
 
 # Create mirror directory
 MIRROR_DIR.mkdir(exist_ok=True)
@@ -27,7 +27,7 @@ for ext in ('.pyx', '.pxd'):
         copied += 1
 
 # Also copy generated C files from the build dir if they exist
-BUILD_DIR = SRC_DIR / 'build' / 'py_ballisticcalc_exts'
+BUILD_DIR = SRC_DIR / 'build' / 'pyballistic_exts'
 if BUILD_DIR.exists():
     for c_src in BUILD_DIR.glob('*.c'):
         # 1) Place next to mirror .pyx

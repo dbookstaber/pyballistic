@@ -1,6 +1,6 @@
-"""Run doctests across the py_ballisticcalc package.
+"""Run doctests across the pyballistic package.
 
-This helper discovers all non-package modules under `py_ballisticcalc`
+This helper discovers all non-package modules under `pyballistic`
 and executes their docstring tests using `doctest` with the ELLIPSIS
 option enabled. Package `__init__.py` files are intentionally skipped to
 avoid relative-import issues when doctested as standalone modules.
@@ -23,8 +23,8 @@ examples in docstrings stay correct and up to date.
 import doctest, pkgutil, sys, pathlib, importlib
 
 def main() -> int:
-    root = pathlib.Path(__file__).resolve().parents[1] / 'py_ballisticcalc'
-    mods = [m.name for m in pkgutil.walk_packages([str(root)], prefix='py_ballisticcalc.') if not m.ispkg]
+    root = pathlib.Path(__file__).resolve().parents[1] / 'pyballistic'
+    mods = [m.name for m in pkgutil.walk_packages([str(root)], prefix='pyballistic.') if not m.ispkg]
     fails = 0
     tried = 0
     for name in sorted(mods):

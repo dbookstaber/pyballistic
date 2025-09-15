@@ -2,8 +2,8 @@
 
 import pytest
 
-from py_ballisticcalc import *
-from py_ballisticcalc.drag_model import BCPoint, make_data_points, linear_interpolation
+from pyballistic import *
+from pyballistic.drag_model import BCPoint, make_data_points, linear_interpolation
 
 pytestmark = pytest.mark.engine
 

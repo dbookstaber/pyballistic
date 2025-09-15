@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from py_ballisticcalc.generics.engine import EngineProtocol
-from py_ballisticcalc.interface import _EngineLoader
-from py_ballisticcalc import Calculator
+from pyballistic.generics.engine import EngineProtocol
+from pyballistic.interface import _EngineLoader
+from pyballistic import Calculator
 
 
 class TestEngineLoader:

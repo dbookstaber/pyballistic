@@ -1,4 +1,4 @@
-prune py_ballisticcalc_exts
+prune pyballistic_exts
 prune tests
 include py.typed
 include Example.ipynb

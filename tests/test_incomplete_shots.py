@@ -1,13 +1,13 @@
 import pytest
 import time
 
-from py_ballisticcalc import (
+from pyballistic import (
     BaseEngineConfigDict,
     Calculator,
     Distance,
     TrajFlag
 )
-from py_ballisticcalc.unit import Angular, PreferredUnits
+from pyballistic.unit import Angular, PreferredUnits
 from tests.fixtures_and_helpers import print_out_trajectory_compact, zero_height_calc, \
     shot_with_relative_angle_in_degrees, create_5_56_mm_shot
 

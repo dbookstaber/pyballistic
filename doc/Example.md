@@ -3,14 +3,14 @@
 #import pyximport; pyximport.install(language_level=3)
 
 from matplotlib import pyplot as plt
-from py_ballisticcalc import Velocity, Distance, Angular
-from py_ballisticcalc import DragModel, TableG7
-from py_ballisticcalc import Ammo
-from py_ballisticcalc import Weapon, Shot, Calculator
-from py_ballisticcalc import Settings as Set
+from pyballistic import Velocity, Distance, Angular
+from pyballistic import DragModel, TableG7
+from pyballistic import Ammo
+from pyballistic import Weapon, Shot, Calculator
+from pyballistic import Settings as Set
 ```
 
-    WARNING:py_balcalc:Library running in pure python mode. For better performance install 'py_ballisticcalc.exts' package
+    WARNING:py_balcalc:Library running in pure python mode. For better performance install 'pyballistic.exts' package
     
 
 

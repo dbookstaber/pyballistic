@@ -32,8 +32,8 @@ import logging
 
 import pytest
 
-from py_ballisticcalc.interface import _EngineLoader
-from py_ballisticcalc.logger import logger
+from pyballistic.interface import _EngineLoader
+from pyballistic.logger import logger
 
 logger.setLevel(logging.DEBUG)
 

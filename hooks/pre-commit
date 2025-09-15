@@ -19,7 +19,7 @@ def pytest(python_executable):
 
 
 def mypy(python_executable):
-    result = subprocess.run([python_executable, "-m", "mypy", "./py_ballisticcalc"], capture_output=True)
+    result = subprocess.run([python_executable, "-m", "mypy", "./pyballistic"], capture_output=True)
 
     if result.returncode != 0:
         print(result.stdout.decode())

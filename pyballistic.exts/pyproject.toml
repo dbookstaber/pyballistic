@@ -1,0 +1,68 @@
+# Copyright 2023 Dmytro Yaroshenko (https://github.com/o-murphy)
+# Copyright 2024 David Bookstaber (https://github.com/dbookstaber)
+
+[build-system]
+requires = ["setuptools", "wheel", 'cython']
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "pyballistic.exts"
+version = "2.2.0rc1"
+
+authors = [
+    { name="o-murphy", email="thehelixpg@gmail.com" },
+    { name="dbookstaber", email="bookstaber@gmail.com"}
+]
+description = "LGPL library for small arms ballistic calculations (Python 3)"
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["pyballistic", "ballistics", "Cython", "ballistic calculator", "python", "python3"]
+#license = {file = "LICENSE"}
+classifiers = [
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Programming Language :: Python",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = []
+
+[project.entry-points.pyballistic]
+cythonized_euler_engine = "pyballistic_exts.euler_engine:CythonizedEulerIntegrationEngine"
+cythonized_rk4_engine = "pyballistic_exts.rk4_engine:CythonizedRK4IntegrationEngine"
+
+[project.urls]
+"Homepage" = "https://github.com/dbookstaber/pyballistic"
+"Bug Reports" = "https://github.com/dbookstaber/pyballistic/issues"
+"Source" = "https://github.com/dbookstaber/pyballistic"
+
+
+[tool.setuptools]
+py-modules = ["pyballistic_exts"]
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pyballistic_exts*"]
+exclude = ["pyballistic_exts.include*"]
+
+[project.optional-dependencies]
+dev = ['cython', 'build', 'setuptools', 'cibuildwheel']
+
+[tool.cibuildwheel]
+# Use uv and build
+build-frontend = "build[uv]"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = '-m "not stress"'
+markers = ["stress: long-running or resource-intensive tests, opt-in only"]

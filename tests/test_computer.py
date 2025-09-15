@@ -2,10 +2,10 @@ import copy
 import math
 import pytest
 
-from py_ballisticcalc import (DragModel, Ammo, Weapon, Calculator, Shot, Wind, Atmo, TableG7, RangeError, TrajFlag,
+from pyballistic import (DragModel, Ammo, Weapon, Calculator, Shot, Wind, Atmo, TableG7, RangeError, TrajFlag,
                               BaseEngineConfigDict
 )
-from py_ballisticcalc.unit import *
+from pyballistic.unit import *
 
 pytestmark = pytest.mark.engine
 

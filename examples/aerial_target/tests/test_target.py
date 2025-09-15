@@ -3,7 +3,7 @@ import math
 from unittest import TestCase
 
 from aerial_targets_shooting.aerial_target import AerialTarget
-from py_ballisticcalc import *
+from pyballistic import *
 
 logger.setLevel(logging.DEBUG)
 

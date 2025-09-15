@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from typing_extensions import Union, NamedTuple, Tuple
 
-from py_ballisticcalc import *
+from pyballistic import *
 
 
 class AerialTargetPrepared(NamedTuple):

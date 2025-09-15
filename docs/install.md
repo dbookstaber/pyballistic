@@ -5,73 +5,90 @@ Installation is as simple as:
 === "pip"
 
     ```bash
-    pip install py-ballisticcalc
+    pip install pyballistic
     ```
 
 === "uv"
 
     ```bash
-    uv add py-ballisticcalc 
+    uv add pyballistic 
     ```
 
-py-ballisticcalc has a few dependencies:
+If you have Python 3.10+ and `pip` installed, you're good to go.
 
-* [`typing-extensions`](https://pypi.org/project/typing-extensions/): Backport of the standard library [typing][] module.
-
-If you've got Python 3.9+ and `pip` installed, you're good to go.
-
-[//]: # (py-ballisticcalc is also available on [conda]&#40;https://www.anaconda.com&#41; under the [conda-forge]&#40;https://conda-forge.org&#41;)
+[//]: # (pyballistic is also available on [conda]&#40;https://www.anaconda.com&#41; under the [conda-forge]&#40;https://conda-forge.org&#41;)
 
 [//]: # (channel:)
 
 [//]: # (```bash)
 
-[//]: # (conda install py-ballisticcalc -c conda-forge)
+[//]: # (conda install pyballistic -c conda-forge)
 
 [//]: # (```)
 
 ## Optional dependencies
 
-py-ballisticcalc has the following optional dependencies:
+pyballistic has the following optional dependencies:
 
-* `py_ballisticcalc.exts`: Cython based implementation of some classes to increase performance. [py_ballisticcalc.exts](https://pypi.org/project/py_ballisticcalc.exts) package.
+* **[`pyballistic.exts`](internals/cython.md):** Cython based implementation of some classes to increase performance. [pyballistic.exts](https://pypi.org/project/pyballistic.exts) package.
+* **`visualize`:** Includes [matplotlib](https://matplotlib.org/) for creating [`charts`][pyballistic.trajectory_data.HitResult.plot] and [pandas](https://pandas.pydata.org/) for creating [`DataFrame tables`][pyballistic.trajectory_data.HitResult.dataframe].
+* **[`scipy`](https://scipy.org/):** Installs support for the `SciPyIntegrationEngine`.
 
-[//]: # (* `RKBallistic`: Implementation of engine that uses Runge–Kutta methods to increase productivity. [py_ballisticcalc.exts]&#40;https://github.com/dbookstaber/RKBallistic&#41; repo.)
-
-To install optional dependencies along with py-ballisticcalc:
+To install optional dependencies along with pyballistic:
 
 === "pip"
 
     ```bash
-    # with the `py_ballisticcalc.exts` extra:
-    pip install 'py-ballisticcalc[exts]'
+    # with the `pyballistic.exts` extra:
+    pip install 'pyballistic[exts]'
     ```
 
     ```bash
     # with dependencies for data visualisation    
-    pip install py-ballisticcalc[visualize]
+    pip install pyballistic[visualize]
     ```
 
 === "uv"
 
     ```bash
-    # with the `py_ballisticcalc.exts` extra:
-    uv add 'py-ballisticcalc[exts]'
+    # with the `pyballistic.exts` extra:
+    uv add 'pyballistic[exts]'
     ```
 
     ```bash
     # with dependencies for data visualisation    
-    uv add  'py-ballisticcalc[visualize]'
+    uv add  'pyballistic[visualize]'
     ```
 
-*Of course, you can also install requirements manually with `pip install py-ballisticcalc.exts pandas matplotlib`.*
+You can also install requirements manually.  For example:
 
-To install latest version from sources in editable mode
+=== "pip"
+    ```
+    pip install pyballistic.exts pandas matplotlib
+    ```
+
+=== "uv"
+    ```
+    uv add pyballistic.exts pandas matplotlib
+    ```
+
+To install latest version from sources in editable mode:
 
 ```bash
-git clone github.com/o-murphy/py-ballisticcalc
-cd py-ballisticcalc
-pip install -e .[dev]
-# optionally install binary extensions
-pip install -e ./py_ballisticcalc.exts[dev]
+git clone github.com/o-murphy/pyballistic
+cd pyballistic
 ```
+
+=== "pip"
+    ```bash
+    # from repo root
+    py -m pip install -e .[dev]                        # main package editable
+    py -m pip install -e ./pyballistic.exts[dev]  # build/install C extensions (optional)
+    ```
+
+=== "uv"
+    ```bash
+    # from repo root
+    uv sync --dev                        # main package editable
+    uv sync --dev --extra exts           # build/install C extensions (optional)
+    ```

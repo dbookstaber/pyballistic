@@ -6,11 +6,11 @@ try:
 except ImportError:
     import tomli as tomllib
 
-pkg_name = 'py_ballisticcalc'
-bin_pkg_name = 'py_ballisticcalc.exts'
+pkg_name = 'pyballistic'
+bin_pkg_name = 'pyballistic.exts'
 version_pattern = r'(\d+)\.(\d+)\.(\d+)([ab]?)(\d*)\.?([a-zA-Z]+)?(\d*)'
 pyproject_toml = "./pyproject.toml"
-bin_pyproject_toml = "./py_ballisticcalc.exts/pyproject.toml"
+bin_pyproject_toml = "./pyballistic.exts/pyproject.toml"
 
 
 def extract_dep_version(data, name):

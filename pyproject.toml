@@ -2,11 +2,11 @@
 # Copyright 2024 David Bookstaber (https://github.com/dbookstaber)
 
 [build-system]
-requires = ["setuptools", "wheel", "tomli; python_version<'3.11'"]
+requires = ["setuptools", "wheel", "tomli; python_version>='3.10'"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "py_ballisticcalc"
+name = "pyballistic"
 version = "2.2.0rc1"
 
 authors = [
@@ -15,8 +15,8 @@ authors = [
 ]
 description = "LGPL library for small arms ballistic calculations (Python 3)"
 readme = "README.md"
-requires-python = ">=3.9"
-keywords = ["py_ballisticcalc", "ballistics", "Cython", "ballistic calculator", "python", "python3"]
+requires-python = ">=3.10"
+keywords = ["pyballistic", "ballistics", "Cython", "ballistic calculator", "python", "python3"]
 license = { file = "LICENSE" }
 classifiers = [
     "Intended Audience :: Developers",
@@ -25,7 +25,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -40,22 +39,22 @@ dependencies = [
     "pandas>=2.3.1",
 ]
 
-[project.entry-points.py_ballisticcalc]
-euler_engine = "py_ballisticcalc:EulerIntegrationEngine"
-rk4_engine = "py_ballisticcalc:RK4IntegrationEngine"
-scipy_engine = "py_ballisticcalc:SciPyIntegrationEngine"
-verlet_engine = "py_ballisticcalc:VelocityVerletIntegrationEngine"
+[project.entry-points.pyballistic]
+euler_engine = "pyballistic:EulerIntegrationEngine"
+rk4_engine = "pyballistic:RK4IntegrationEngine"
+scipy_engine = "pyballistic:SciPyIntegrationEngine"
+verlet_engine = "pyballistic:VelocityVerletIntegrationEngine"
 
 [project.urls]
-"Homepage" = "https://github.com/o-murphy/py_ballisticcalc"
-"Bug Reports" = "https://github.com/o-murphy/py_ballisticcalc/issues"
-"Source" = "https://github.com/o-murphy/py_ballisticcalc"
+"Homepage" = "https://github.com/dbookstaber/pyballistic"
+"Bug Reports" = "https://github.com/dbookstaber/pyballistic/issues"
+"Source" = "https://github.com/dbookstaber/pyballistic"
 
 
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["py_ballisticcalc*"]
+include = ["pyballistic*"]
 
 
 [tool.pytest.ini_options]
@@ -69,25 +68,26 @@ markers = [
 ]
 
 [tool.mypy]
-packages = ["py_ballisticcalc"]
+packages = ["pyballistic"]
 
 [tool.ruff]
 include = [
     "pyproject.toml",
-    "py_ballisticcalc/**/*.py"
+    "pyballistic/**/*.py"
 ]
 extend-exclude = ["__init__.py"]
 line-length = 120
 
 [tool.uv.sources]
-"py_ballisticcalc.exts" = { path = "./py_ballisticcalc.exts" }  # required for `uv sync`
+"pyballistic.exts" = { path = "./pyballistic.exts" }  # required for `uv sync`
 
 [project.optional-dependencies]
-exts = ["py_ballisticcalc.exts==2.2.0rc1"]
+exts = ["pyballistic.exts==2.2.0rc1"]
 charts = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
 visualize = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
 scipy = ["numpy>=2", "scipy>=1.13.1"]
 dev = [
+    "Cython>=3.0",
     "build>=1.2.2.post1",
     "jupyter>=1.1.1",
     "matplotlib>=3.9",
@@ -106,12 +106,14 @@ dev = [
     "ruff>=0.12.3",
 ]
 docs = [
+    'mkdocs-mermaid2-plugin',
     'mkdocs',
     'mkdocs-exclude',
     'mkdocs-material[imaging]',
     'mkdocs-redirects',
-    'mkdocstrings-python',
-    'mkdocstrings',
+    # Pin mkdocstrings to versions that support show_attribute_values
+    'mkdocstrings>=0.29.0',
+    'mkdocstrings-python>=1.16.0',
     'mkdocs-autorefs',
     'mike',
     'pydocstyle',
@@ -121,6 +123,7 @@ docs = [
 # Duplication of "dev" group here is required to support `uv sync --dev`
 # Previous declaration sufficient if we standardize on `uv pip install -e .[dev]`
 dev = [
+    "Cython>=3.0",
     "build>=1.2.2.post1",
     "jupyter>=1.1.1",
     "matplotlib>=3.9",

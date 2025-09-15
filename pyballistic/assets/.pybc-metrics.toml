@@ -1,0 +1,24 @@
+# Metric unit preset
+
+title = "pyballistic config"
+version = "2.2.0"
+
+[pybc.preferred_units]
+# mkdocs.pymdown.snippet marker: --8<-- [start:pybc-metric]
+angular = 'Degree'
+distance = 'Meter'
+velocity = 'MPS'
+pressure = 'hPa'
+temperature = 'Celsius'
+diameter = 'Centimeter'
+length = 'Centimeter'
+weight = 'Gram'
+adjustment = 'Mil'
+drop = 'Centimeter'
+energy = 'Joule'
+ogw = 'Kilogram'
+sight_height = 'Centimeter'
+target_height = 'Meter'
+twist = 'Centimeter'
+time = 'Second'
+# --8<-- [end:pybc-metric]

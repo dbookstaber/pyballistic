@@ -1,4 +1,4 @@
-::: py_ballisticcalc.munition.Weapon
+::: pyballistic.munition.Weapon
     options:
       group_by_category: false
       members:

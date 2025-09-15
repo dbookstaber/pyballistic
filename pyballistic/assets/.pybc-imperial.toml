@@ -1,0 +1,24 @@
+# Imperial unit preset
+
+title = "pyballistic config"
+version = "2.2.0"
+
+[pybc.preferred_units]
+# mkdocs.pymdown.snippet marker: --8<-- [start:pybc-imperial]
+angular = 'Degree'
+distance = 'Foot'
+velocity = 'FPS'
+pressure = 'InHg'
+temperature = 'Fahrenheit'
+diameter = 'Inch'
+length = 'Inch'
+weight = 'Grain'
+adjustment = 'Mil'
+drop = 'Inch'
+energy = 'FootPound'
+ogw = 'Pound'
+sight_height = 'Inch'
+target_height = 'Inch'
+twist = 'Inch'
+time = 'Second'
+# --8<-- [end:pybc-imperial]

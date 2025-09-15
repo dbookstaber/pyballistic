@@ -1,6 +1,6 @@
 import pytest
 
-from py_ballisticcalc import Calculator, Distance
+from pyballistic import Calculator, Distance
 from tests.fixtures_and_helpers import create_7_62_mm_shot  # type: ignore[attr-defined]
 
 pytestmark = pytest.mark.extended
@@ -17,7 +17,7 @@ def test_dataframe_and_plot_smoke(loaded_engine_instance):
         assert set(("distance", "height")).issubset(df.columns)
     except ImportError as e:
         # Allow running without pandas
-        assert "py_ballisticcalc[charts]" in str(e)
+        assert "pyballistic[charts]" in str(e)
 
     # matplotlib plot integration
     try:
@@ -26,7 +26,7 @@ def test_dataframe_and_plot_smoke(loaded_engine_instance):
 
         # add time axis explicitly to cover code path
         try:
-            from py_ballisticcalc.visualize.plot import (
+            from pyballistic.visualize.plot import (
                 add_time_of_flight_axis,
                 add_danger_space_overlay,
             )
@@ -37,7 +37,7 @@ def test_dataframe_and_plot_smoke(loaded_engine_instance):
             add_danger_space_overlay(ds, ax, label="Test DS")
         except ImportError as e:
             # Allow running without matplotlib
-            assert "py_ballisticcalc[charts]" in str(e)
+            assert "pyballistic[charts]" in str(e)
     except ImportError as e:
         # Allow running without matplotlib
-        assert "py_ballisticcalc[charts]" in str(e)
+        assert "pyballistic[charts]" in str(e)

@@ -2,8 +2,8 @@
 # import RKballistic
 
 import logging
-from py_ballisticcalc import *
-from py_ballisticcalc.logger import logger
+from pyballistic import *
+from pyballistic.logger import logger
 
 logger.setLevel(logging.DEBUG)
 

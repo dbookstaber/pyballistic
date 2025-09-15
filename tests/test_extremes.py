@@ -1,9 +1,9 @@
 import math
 import pytest
 
-from py_ballisticcalc import *
-from py_ballisticcalc.helpers import vacuum_range, EARTH_GRAVITY_CONSTANT_IN_SI
-from py_ballisticcalc.vector import Vector
+from pyballistic import *
+from pyballistic.helpers import vacuum_range, EARTH_GRAVITY_CONSTANT_IN_SI
+from pyballistic.vector import Vector
 
 
 class TestAtmoBoundaries:
@@ -71,7 +71,7 @@ class TestVectorEdge:
 
 class TestInterpolationTightSpacing:
     def test_three_point_pchip_tiny_interval(self):
-        from py_ballisticcalc.interpolation import interpolate_3_pt
+        from pyballistic.interpolation import interpolate_3_pt
         # Very tight spacing between first two points
         x0, x1, x2 = 0.0, 1e-12, 1.0
         y0, y1, y2 = 0.0, 1e-12, 1.0
@@ -94,7 +94,7 @@ class TestHelpersVacuum:
 
     def test_vacuum_angle_to_zero_domain_error(self):
         # distance too large -> argument to asin > 1 => ValueError
-        from py_ballisticcalc.helpers import vacuum_angle_to_zero
+        from pyballistic.helpers import vacuum_angle_to_zero
         v = 10.0
         g = EARTH_GRAVITY_CONSTANT_IN_SI
         # Make distance slightly larger than max range achievable at 45 deg
@@ -103,7 +103,7 @@ class TestHelpersVacuum:
             _ = vacuum_angle_to_zero(v, d, gravity=g)
 
     def test_vacuum_velocity_to_zero_zero_angle_division_by_zero(self):
-        from py_ballisticcalc.helpers import vacuum_velocity_to_zero
+        from pyballistic.helpers import vacuum_velocity_to_zero
         with pytest.raises(ZeroDivisionError):
             _ = vacuum_velocity_to_zero(1.0, 0.0)
 

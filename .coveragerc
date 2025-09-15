@@ -6,9 +6,9 @@ omit =
     */.venv/*
 disable_warnings = couldnt-parse
 source =
-    py_ballisticcalc
-    py_ballisticcalc_exts
-    py_ballisticcalc.exts
+    pyballistic
+    pyballistic_exts
+    pyballistic.exts
 
 [report]
 exclude_lines =
@@ -21,9 +21,9 @@ omit =
 # Alias Cython-reported file paths to the real source tree locations
 source =
     .
-    py_ballisticcalc_exts
-    py_ballisticcalc.exts
-    py_ballisticcalc.exts/py_ballisticcalc_exts
+    pyballistic_exts
+    pyballistic.exts
+    pyballistic.exts/pyballistic_exts
 
 [run:plugins]
 # Ensure the Cython plugin claims .pyx files for reporting

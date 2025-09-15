@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from py_ballisticcalc import (DragModel, TableG1, Distance, Weight, Ammo, Velocity, Weapon, Shot,
+from pyballistic import (DragModel, TableG1, Distance, Weight, Ammo, Velocity, Weapon, Shot,
                               Angular, Calculator, RangeError, HitResult, BaseEngineConfigDict,
                               loadImperialUnits, loadMetricUnits, PreferredUnits)
 

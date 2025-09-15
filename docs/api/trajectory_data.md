@@ -1,4 +1,5 @@
-::: py_ballisticcalc.trajectory_data
-    options:
-      group_by_category: false
-      members:
+::: pyballistic.trajectory_data.TrajFlag
+
+::: pyballistic.trajectory_data.BaseTrajData
+
+::: pyballistic.trajectory_data.TrajectoryData
