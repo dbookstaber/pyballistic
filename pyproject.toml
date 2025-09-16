@@ -16,7 +16,7 @@ authors = [
 description = "LGPL library for small arms ballistic calculations (Python 3)"
 readme = "README.md"
 requires-python = ">=3.10"
-keywords = ["pyballistic", "ballistics", "Cython", "ballistic calculator", "python", "python3"]
+keywords = ["pyballistic", "ballistics", "Cython", "ballistic calculator", "python", "ballistic solver"]
 license = { file = "LICENSE" }
 classifiers = [
     "Intended Audience :: Developers",
@@ -84,7 +84,6 @@ line-length = 120
 [project.optional-dependencies]
 exts = ["pyballistic.exts==2.2.0"]
 charts = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
-visualize = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
 scipy = ["numpy>=2", "scipy>=1.13.1"]
 dev = [
     "Cython>=3.0",

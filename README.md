@@ -60,9 +60,6 @@ https://dbookstaber.github.io/pyballistic
 * **[Installation](#installation)**
     * [Latest stable](https://pypi.org/project/pyballistic/)
 
-  [//]: # (  * [From sources]&#40;#installing-from-sources&#41;)
-  [//]: # (  * [Clone and build]&#40;#clone-and-build&#41;)
-
 * **[QuickStart](#quickstart)**
 
     * [Examples](#examples)
@@ -85,21 +82,10 @@ pip install pyballistic[exts]
 
 # Using matplotlib and pandas uses additional dependencies
 pip install pyballistic[charts]
+
+# Get everything, including the SciPy-powered calculation engine
+pip install pyballistic[exts,charts,scipy]
 ```
-
-## uv
-
-```shell
-uv sync
-
-uv sync --dev --extra exts
-```
-
-## Docs
-
-To build or serve the complete web documentation, first `pip install -e .[docs]`.  Then:
-* `mkdocs build` will populate a `./site` folder with HTML.
-* `mkdocs serve` will build and serve the HTML via local connection.
 
 ----
 
