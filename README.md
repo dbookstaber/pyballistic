@@ -34,7 +34,7 @@ https://pypi.org/project/pyballistic/
 https://pypi.org/project/pyballistic/#history
 
 [coverage]:
-./coverage.svg
+https://github.com/dbookstaber/pyballistic/coverage.svg
 
 [downloads]:
 https://img.shields.io/pepy/dt/pyballistic?style=flat-square
@@ -89,17 +89,17 @@ pip install pyballistic[exts,charts,scipy]
 
 ----
 
-# [QuickStart](docs/index.md)
+# [QuickStart](https://dbookstaber.github.io/pyballistic/latest)
 
 ## [Examples](examples/Examples.ipynb)
   * [Extreme Examples](examples/ExtremeExamples.ipynb)
 
-## [Ballistic Concepts](docs/concepts/index.md)
-  * [Coordinates](docs/concepts/index.md#coordinates)
-  * [Slant / Look Angle](docs/concepts/index.md#look-angle)
-  * [Danger Space](docs/concepts/index.md#danger-space)
+## [Ballistic Concepts](https://dbookstaber.github.io/pyballistic/latest/concepts)
+  * [Coordinates](https://dbookstaber.github.io/pyballistic/latest/concepts/#coordinates)
+  * [Slant / Look Angle](https://dbookstaber.github.io/pyballistic/latest/concepts/#look-angle)
+  * [Danger Space](https://dbookstaber.github.io/pyballistic/latest/concepts/#danger-space)
 
-## [Units](docs/concepts/unit.md)
+## [Units](https://dbookstaber.github.io/pyballistic/latest/concepts/unit)
 
 Work in your preferred terms with easy conversions for the following dimensions and units:
 * **Angular**: radian, degree, MOA, mil, mrad, thousandth, inch/100yd, cm/100m, o'clock
@@ -112,7 +112,7 @@ Work in your preferred terms with easy conversions for the following dimensions 
 * **Weight**: grain, ounce, gram, pound, kilogram, newton
 
 
-## [Calculation Engines](docs/concepts/engines.md)
+## [Calculation Engines](https://dbookstaber.github.io/pyballistic/latest/concepts/engines)
 
 Choose between different calculation engines, or build your own.  Included engines:
 
