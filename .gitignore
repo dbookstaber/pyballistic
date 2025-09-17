@@ -9,10 +9,12 @@
 .vscode
 .coverage
 htmlcov
-debug
-/site/
+**/debug
+**/site
 .env
 .testall
 compile_flags.txt
 # Mirror of Cython sources for coverage lookup:
 /pyballistic_exts/*
+/.sync_upstream/
+/.sync_diff/

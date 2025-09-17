@@ -1,0 +1,60 @@
+name: Sync Upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Upstream ref (branch/tag or pull/<num>/head)'
+        required: false
+        default: ''
+      clean:
+        description: 'Remove files deleted upstream'
+        required: false
+        default: 'false'
+  # schedule:
+  #   - cron: '17 5 * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run upstream sync
+        env:
+          SYNC_REF: ${{ github.event.inputs.ref }}
+        run: |
+          if [ "${{ github.event.inputs.clean }}" = "true" ]; then CLEAN_ARG="--clean"; else CLEAN_ARG=""; fi
+          python scripts/sync_upstream.py $CLEAN_ARG
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: |
+            chore(sync): apply upstream changes with pyballistic transforms
+          title: 'Sync from upstream with transformations'
+          body: |
+            This PR was created automatically by the Sync Upstream workflow.
+
+            - Pulls latest from upstream and applies configured transformations
+            - Preserves files listed in `sync_config.json` under `exclude_paths`
+            - See script at `scripts/sync_upstream.py` for details
+
+            If there are unexpected changes, adjust `sync_config.json` or update the script.
+          branch: ci/sync-upstream
+          delete-branch: true
+          signoff: true
+          add-paths: |
+            **/*

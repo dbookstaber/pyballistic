@@ -1,0 +1,31 @@
+{
+  "upstream_repo": "o-murphy/py-ballisticcalc",
+  "upstream_branch": "master",
+  "map_paths": [
+    {
+      "from": "py_ballisticcalc",
+      "to": "pyballistic"
+    },
+    {
+      "from": "py-ballisticcalc",
+      "to": "pyballistic"
+    }
+  ],
+  "text_replacements": [
+    { "from": "py_ballisticcalc", "to": "pyballistic" },
+    { "from": "py-ballisticcalc", "to": "pyballistic" },
+    { "from": "https://github.com/o-murphy/py-ballisticcalc", "to": "https://github.com/dbookstaber/pyballistic" }
+  ],
+  "exclude_paths": [
+    "README.md",
+    ".gitignore"
+  ],
+  "binary_patterns": [
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.gif",
+    "**/*.pdf",
+    "**/*.zip"
+  ]
+}
