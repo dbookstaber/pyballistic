@@ -112,12 +112,71 @@ def transform_text_files(tmp_dir: Path, replacements: List[Dict], binary_pattern
             path.write_text(content, encoding="utf-8")
 
 
-def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str]):
-    # Bring transformed files into repo, excluding configured paths
+def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: List[str] | None = None,
+                    normalize_opts: Dict | None = None):
+    # Bring transformed files into repo, excluding configured paths; skip copying if content is effectively equal
     from fnmatch import fnmatch
+    text_exts = {
+        ".py", ".md", ".rst", ".toml", ".yml", ".yaml", ".ini", ".cfg", ".txt", ".json",
+        ".sh", ".ps1", ".bat", ".ipynb", ".in", ".pyi", ".pyx", ".pxd", ".pxi"
+    }
+    special_text_names = {".gitignore", ".gitattributes", "Makefile", "LICENSE", "COPYING", "pre-commit"}
+
+    def is_probably_text(p: Path) -> bool:
+        try:
+            with p.open('rb') as f:
+                head = f.read(4096)
+            if b"\x00" in head:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def norm_bytes_for_compare(p: Path):
+        if normalize_opts is None:
+            return p.read_bytes()
+        if (p.suffix.lower() not in text_exts) and (p.name not in special_text_names) and not is_probably_text(p):
+            return p.read_bytes()
+        import unicodedata
+        b = p.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        if b.startswith(b"\xef\xbb\xbf"):
+            b = b[3:]
+        try:
+            s = b.decode("utf-8", errors="replace")
+        except Exception:
+            s = b.decode("latin-1", errors="replace")
+        norm_form = (normalize_opts.get("unicode_norm") or "NFKC").upper()
+        if norm_form != "NONE":
+            if norm_form == "NFC":
+                s = unicodedata.normalize("NFC", s)
+            elif norm_form == "NFD":
+                s = unicodedata.normalize("NFD", s)
+            elif norm_form == "NFKC":
+                s = unicodedata.normalize("NFKC", s)
+            elif norm_form == "NFKD":
+                s = unicodedata.normalize("NFKD", s)
+        if normalize_opts.get("ignore_ws"):
+            s = "\n".join(ln.rstrip() for ln in s.splitlines())
+        return s.encode("utf-8")
+
+    def equal_file(a: Path, b: Path) -> bool:
+        try:
+            if a.exists() and b.exists():
+                try:
+                    if a.read_bytes() == b.read_bytes():
+                        return True
+                except Exception:
+                    pass
+                return norm_bytes_for_compare(a) == norm_bytes_for_compare(b)
+            return False
+        except Exception:
+            return False
+
     for src in tmp_dir.rglob("*"):
         rel = src.relative_to(tmp_dir)
         if rel.parts and rel.parts[0] in {".git", ".github", ".sync_upstream", ".sync_diff"}:
+            continue
+        if include_patterns and not _matches(rel, include_patterns):
             continue
         if any(fnmatch(str(rel).replace("\\", "/"), pat) for pat in exclude_paths):
             continue
@@ -126,6 +185,8 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str]):
             dest.mkdir(parents=True, exist_ok=True)
         else:
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists() and equal_file(src, dest):
+                continue
             shutil.copy2(src, dest)
 
 
@@ -221,7 +282,9 @@ def main():
     parser.add_argument("--clean", action="store_true", help="Delete files removed upstream (excluding excluded paths)")
     parser.add_argument("--dry-run", action="store_true", help="Run transforms without copying into repo")
     parser.add_argument("--paths", nargs="+", help="Glob patterns relative to repo root to limit the diff/sync scope (e.g., pyballistic/** docs/**)")
-    parser.add_argument("--show-diff", action="store_true", help="Print diff of changes without modifying working tree")
+    parser.add_argument("--show-diff", action="store_true", help="Print diff of changes; does not modify working tree unless --apply/--stage is set")
+    parser.add_argument("--apply", action="store_true", help="Apply transformed upstream into working tree (respects --paths, --clean)")
+    parser.add_argument("--stage", action="store_true", help="Stage changes after applying (implies --apply)")
     parser.add_argument("--keep-temp", action="store_true", help="Keep .sync_diff folder for manual inspection")
     parser.add_argument("--check", nargs="*", help="Specific files to verify (relative to repo root); prints if changed and why")
     parser.add_argument("--sample-diff", type=int, default=0, help="When using --check, print up to N lines of unified diff for each checked file")
@@ -432,14 +495,25 @@ def main():
         print("[dry-run] Transforms applied in", WORKTREE)
         return
 
-    # Sync files into current repo, respecting exclusions
-    rsync_into_repo(WORKTREE, exclude_paths)
-    if args.clean:
-        clean_deleted_files(WORKTREE, exclude_paths)
+    # If only showing diff, avoid modifying working tree unless apply/stage is set
+    if args.show_diff and not (args.apply or args.stage):
+        print("[info] show-diff only; no changes applied.")
+        return
 
-    # Stage and leave to workflow to open PR
-    run(["git", "add", "-A"], cwd=ROOT)
-    # Don't commit here; create-pull-request action will commit
+    # Backward compatibility default: if neither show-diff nor apply/stage provided,
+    # proceed to apply+stage (keeps CI behavior unchanged)
+    do_apply = args.apply or args.stage or (not args.show_diff and not args.dry_run)
+    if do_apply:
+        rsync_into_repo(
+            WORKTREE,
+            exclude_paths,
+            include_patterns=args.paths,
+            normalize_opts={"ignore_ws": args.ignore_ws, "unicode_norm": args.unicode_norm},
+        )
+        if args.clean:
+            clean_deleted_files(WORKTREE, exclude_paths, dest_root=ROOT, include_patterns=args.paths)
+        if args.stage or (not args.show_diff and not args.dry_run):
+            run(["git", "add", "-A"], cwd=ROOT)
 
 
 if __name__ == "__main__":

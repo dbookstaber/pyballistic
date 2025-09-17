@@ -12,12 +12,17 @@
     }
   ],
   "text_replacements": [
+    { "from": "https://github.com/o-murphy/py-ballisticcalc", "to": "https://github.com/dbookstaber/pyballistic" },
+    { "from": "https://o-murphy.github.io/py-ballisticcalc", "to": "https://dbookstaber.github.io/pyballistic" },
+    { "from": "o-murphy/py_ballisticcalc", "to": "dbookstaber/pyballistic" },
+    { "from": "o-murphy/py-ballisticcalc", "to": "dbookstaber/pyballistic" },
     { "from": "py_ballisticcalc", "to": "pyballistic" },
-    { "from": "py-ballisticcalc", "to": "pyballistic" },
-    { "from": "https://github.com/o-murphy/py-ballisticcalc", "to": "https://github.com/dbookstaber/pyballistic" }
+    { "from": "py-ballisticcalc", "to": "pyballistic" }
   ],
   "exclude_paths": [
     "README.md",
+    "pyballistic.exts/README.md",
+    "contributors.md",
     ".gitignore"
   ],
   "binary_patterns": [

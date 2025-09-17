@@ -11,6 +11,18 @@ on:
         description: 'Remove files deleted upstream'
         required: false
         default: 'false'
+      paths:
+        description: 'Space-separated globs to limit scope (e.g., "pyballistic/** tests/** docs/**")'
+        required: false
+        default: ''
+      ignore_ws:
+        description: 'Ignore trailing whitespace in text comparisons'
+        required: false
+        default: 'true'
+      unicode_norm:
+        description: 'Unicode normalization (NFC|NFD|NFKC|NFKD|NONE)'
+        required: false
+        default: 'NFKC'
   # schedule:
   #   - cron: '17 5 * * *'
 
@@ -32,12 +44,33 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run upstream sync
-        env:
-          SYNC_REF: ${{ github.event.inputs.ref }}
+      - name: Compute args
+        id: args
         run: |
-          if [ "${{ github.event.inputs.clean }}" = "true" ]; then CLEAN_ARG="--clean"; else CLEAN_ARG=""; fi
-          python scripts/sync_upstream.py $CLEAN_ARG
+          CLEAN_ARG=""; [ "${{ github.event.inputs.clean }}" = "true" ] && CLEAN_ARG="--clean"
+          WS_ARG=""; [ "${{ github.event.inputs.ignore_ws }}" = "true" ] && WS_ARG="--ignore-ws"
+          PATHS_ARG=""
+          if [ -n "${{ github.event.inputs.paths }}" ]; then
+            # shellwords: convert to array safely
+            read -ra P <<< "${{ github.event.inputs.paths }}"
+            PATHS_ARG="--paths ${P[*]}"
+          fi
+          echo "clean=$CLEAN_ARG" >> $GITHUB_OUTPUT
+          echo "ws=$WS_ARG" >> $GITHUB_OUTPUT
+          echo "paths=$PATHS_ARG" >> $GITHUB_OUTPUT
+
+      - name: Show diff (no changes applied)
+        run: |
+          python scripts/sync_upstream.py --show-diff --ref "${{ github.event.inputs.ref }}" \
+            ${{ steps.args.outputs.clean }} ${{ steps.args.outputs.ws }} \
+            --unicode-norm "${{ github.event.inputs.unicode_norm }}" ${{ steps.args.outputs.paths }}
+
+      - name: Apply and stage if needed
+        run: |
+          # If no diff detected, the following apply will be a no-op due to normalized equality checks
+          python scripts/sync_upstream.py --stage --ref "${{ github.event.inputs.ref }}" \
+            ${{ steps.args.outputs.clean }} ${{ steps.args.outputs.ws }} \
+            --unicode-norm "${{ github.event.inputs.unicode_norm }}" ${{ steps.args.outputs.paths }}
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
