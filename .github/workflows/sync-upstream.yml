@@ -61,7 +61,7 @@ jobs:
 
       - name: Show diff (no changes applied)
         run: |
-          python scripts/sync_upstream.py --show-diff --ref "${{ github.event.inputs.ref }}" \
+          python scripts/sync_upstream.py --dry-run --show-diff --ref "${{ github.event.inputs.ref }}" \
             ${{ steps.args.outputs.clean }} ${{ steps.args.outputs.ws }} \
             --unicode-norm "${{ github.event.inputs.unicode_norm }}" ${{ steps.args.outputs.paths }}
 
@@ -72,9 +72,19 @@ jobs:
             ${{ steps.args.outputs.clean }} ${{ steps.args.outputs.ws }} \
             --unicode-norm "${{ github.event.inputs.unicode_norm }}" ${{ steps.args.outputs.paths }}
 
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --staged --quiet; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
+
       - name: Create Pull Request
+        if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
+          # If your repo/org policy blocks GITHUB_TOKEN from creating PRs,
+          # add a secret named PR_CREATE_TOKEN (classic PAT with repo scope)
+          # and it will be used here. Otherwise the action uses the default token.
+          token: ${{ secrets.PR_CREATE_TOKEN }}
           commit-message: |
             chore(sync): apply upstream changes with pyballistic transforms
           title: 'Sync from upstream with transformations'
