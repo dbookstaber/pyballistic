@@ -77,16 +77,25 @@ jobs:
         run: |
           if git diff --staged --quiet; then echo "changed=false" >> $GITHUB_OUTPUT; else echo "changed=true" >> $GITHUB_OUTPUT; fi
 
-      - name: Create Pull Request
+      - name: Commit and push sync branch
         if: steps.diff.outputs.changed == 'true'
+        run: |
+          BRANCH="ci/sync-upstream"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git commit -m "chore(sync): apply upstream changes with pyballistic transforms" --no-verify || true
+          if [ -n "${{ secrets.PR_CREATE_TOKEN }}" ]; then \
+            git remote set-url origin "https://x-access-token:${{ secrets.PR_CREATE_TOKEN }}@github.com/${{ github.repository }}.git"; \
+          fi
+          git push --force-with-lease origin "$BRANCH":refs/heads/"$BRANCH"
+
+      - name: Create Pull Request (PAT)
+        if: steps.diff.outputs.changed == 'true' && secrets.PR_CREATE_TOKEN != ''
         uses: peter-evans/create-pull-request@v6
         with:
-          # If your repo/org policy blocks GITHUB_TOKEN from creating PRs,
-          # add a secret named PR_CREATE_TOKEN (classic PAT with repo scope)
-          # and it will be used here. Otherwise the action uses the default token.
           token: ${{ secrets.PR_CREATE_TOKEN }}
-          commit-message: |
-            chore(sync): apply upstream changes with pyballistic transforms
+          branch: ci/sync-upstream
           title: 'Sync from upstream with transformations'
           body: |
             This PR was created automatically by the Sync Upstream workflow.
@@ -96,8 +105,20 @@ jobs:
             - See script at `scripts/sync_upstream.py` for details
 
             If there are unexpected changes, adjust `sync_config.json` or update the script.
-          branch: ci/sync-upstream
-          delete-branch: true
           signoff: true
-          add-paths: |
-            **/*
+
+      - name: Create Pull Request (default token fallback)
+        if: steps.diff.outputs.changed == 'true' && (secrets.PR_CREATE_TOKEN == '' || secrets.PR_CREATE_TOKEN == null)
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ci/sync-upstream
+          title: 'Sync from upstream with transformations'
+          body: |
+            This PR was created automatically by the Sync Upstream workflow.
+
+            - Pulls latest from upstream and applies configured transformations
+            - Preserves files listed in `sync_config.json` under `exclude_paths`
+            - See script at `scripts/sync_upstream.py` for details
+
+            If there are unexpected changes, adjust `sync_config.json` or update the script.
+          signoff: true
