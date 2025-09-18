@@ -1,3 +1,30 @@
+"""Sync upstream repository into this repo with configurable transforms.
+
+Overview:
+- Clones the upstream repo into `.sync_upstream`, checks out `--ref` (or `upstream_branch` from `sync_config.json`).
+- Applies path renames and text replacements from `sync_config.json`.
+- Supports dry-run overlays with `--show-diff` (no working tree changes) and scoped sync via `--paths`.
+- Applies changes with `--apply` (optionally `--stage`) and deletes removed files with `--clean` (respecting exclusions).
+- Normalizes comparisons via `--ignore-ws` and `--unicode-norm` to avoid false diffs (EOL/BOM/Unicode).
+- Cleans up `.sync_upstream` and `.sync_diff` by default; keep with `--keep-upstream`/`--keep-temp`.
+
+Key files:
+- `sync_config.json` – upstream repo/branch, path mappings, text replacements, excludes, binary patterns.
+- `.sync_upstream/` – temporary upstream clone (removed unless `--keep-upstream`).
+- `.sync_diff/` – overlay snapshot for diff-only mode (removed unless `--keep-temp`).
+
+Usage examples:
+- Stage changes to synchronize with upstream master:
+    `python scripts/sync_upstream.py --stage`
+- Dry-run PR 219 overlay for core code and tests only:
+    `python scripts/sync_upstream.py --ref pull/219/head --show-diff --paths pyballistic/** tests/**`
+- Apply and stage, cleaning deletions:
+    `python scripts/sync_upstream.py --apply --stage --clean --paths pyballistic/** tests/**`
+
+Notes:
+- You can also set `SYNC_REF` env var instead of `--ref`.
+- Runs `git add -A` when `--stage` (or when neither `--show-diff` nor `--dry-run` is provided).
+"""
 import json
 import os
 import re
@@ -285,12 +312,13 @@ def main():
     parser.add_argument("--show-diff", action="store_true", help="Print diff of changes; does not modify working tree unless --apply/--stage is set")
     parser.add_argument("--apply", action="store_true", help="Apply transformed upstream into working tree (respects --paths, --clean)")
     parser.add_argument("--stage", action="store_true", help="Stage changes after applying (implies --apply)")
-    parser.add_argument("--keep-temp", action="store_true", help="Keep .sync_diff folder for manual inspection")
     parser.add_argument("--check", nargs="*", help="Specific files to verify (relative to repo root); prints if changed and why")
     parser.add_argument("--sample-diff", type=int, default=0, help="When using --check, print up to N lines of unified diff for each checked file")
     parser.add_argument("--hash-check", action="store_true", help="When using --check, print SHA256 hashes for each side")
     parser.add_argument("--ignore-ws", action="store_true", help="Ignore trailing whitespace when comparing text files")
     parser.add_argument("--unicode-norm", default="NFKC", choices=["NFC","NFD","NFKC","NFKD","NONE"], help="Unicode normalization form for text comparisons")
+    parser.add_argument("--keep-temp", action="store_true", help="Keep .sync_diff folder for manual inspection")
+    parser.add_argument("--keep-upstream", action="store_true", help="Keep .sync_upstream clone for inspection (default cleans up)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -489,6 +517,10 @@ def main():
                 shutil.rmtree(DIFFTREE, onerror=_on_rm_error)
             else:
                 print(f"[keep-temp] Retained snapshot at {DIFFTREE}")
+            if not args.keep_upstream:
+                shutil.rmtree(WORKTREE, onerror=_on_rm_error)
+            else:
+                print(f"[keep-upstream] Retained upstream clone at {WORKTREE}")
         print("[dry-run] Diff displayed based on transforms in", WORKTREE)
         return
     elif args.dry_run:
@@ -514,6 +546,11 @@ def main():
             clean_deleted_files(WORKTREE, exclude_paths, dest_root=ROOT, include_patterns=args.paths)
         if args.stage or (not args.show_diff and not args.dry_run):
             run(["git", "add", "-A"], cwd=ROOT)
+    # Cleanup upstream clone unless requested to keep
+    if not args.keep_upstream:
+        shutil.rmtree(WORKTREE, onerror=_on_rm_error)
+    else:
+        print(f"[keep-upstream] Retained upstream clone at {WORKTREE}")
 
 
 if __name__ == "__main__":

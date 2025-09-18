@@ -91,6 +91,7 @@ jobs:
         with:
           token: ${{ env.PR_CREATE_TOKEN }}
           branch: ci/sync-upstream
+          branch-suffix: short-commit-hash
           base: ${{ github.event.repository.default_branch }}
           title: 'Sync from upstream with transformations'
           body: |
@@ -102,12 +103,14 @@ jobs:
 
             If there are unexpected changes, adjust `sync_config.json` or update the script.
           signoff: true
+          delete-branch: true
 
       - name: Create Pull Request (default token fallback)
         if: steps.diff.outputs.changed == 'true' && env.PR_CREATE_TOKEN == ''
         uses: peter-evans/create-pull-request@v6
         with:
           branch: ci/sync-upstream
+          branch-suffix: short-commit-hash
           base: ${{ github.event.repository.default_branch }}
           title: 'Sync from upstream with transformations'
           body: |
@@ -119,3 +122,4 @@ jobs:
 
             If there are unexpected changes, adjust `sync_config.json` or update the script.
           signoff: true
+          delete-branch: true
