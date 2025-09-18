@@ -85,19 +85,6 @@ jobs:
           echo "Staged files:";
           git diff --name-only --staged | sed -n '1,100p'
 
-      - name: Commit and push sync branch
-        if: steps.diff.outputs.changed == 'true'
-        run: |
-          BRANCH="ci/sync-upstream"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          git commit -m "chore(sync): apply upstream changes with pyballistic transforms" --no-verify || true
-          if [ -n "${{ secrets.PR_CREATE_TOKEN }}" ]; then \
-            git remote set-url origin "https://x-access-token:${{ secrets.PR_CREATE_TOKEN }}@github.com/${{ github.repository }}.git"; \
-          fi
-          git push --force-with-lease origin "$BRANCH":refs/heads/"$BRANCH"
-
       - name: Create Pull Request (PAT)
         if: steps.diff.outputs.changed == 'true' && env.PR_CREATE_TOKEN != ''
         uses: peter-evans/create-pull-request@v6
@@ -105,7 +92,6 @@ jobs:
           token: ${{ env.PR_CREATE_TOKEN }}
           branch: ci/sync-upstream
           base: ${{ github.event.repository.default_branch }}
-          create-only: true
           title: 'Sync from upstream with transformations'
           body: |
             This PR was created automatically by the Sync Upstream workflow.
@@ -123,7 +109,6 @@ jobs:
         with:
           branch: ci/sync-upstream
           base: ${{ github.event.repository.default_branch }}
-          create-only: true
           title: 'Sync from upstream with transformations'
           body: |
             This PR was created automatically by the Sync Upstream workflow.
