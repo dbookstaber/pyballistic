@@ -26,8 +26,8 @@
     options:
         show_signature: false
         separate_signature: false
-        show_signature_annotations: false
         show_attribute_values: false
+        show_signature_annotations: false
 
 ```python
 --8<-- "pyballistic/unit.py:UnitAliases"
