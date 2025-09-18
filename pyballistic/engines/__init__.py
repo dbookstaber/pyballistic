@@ -5,24 +5,24 @@ trajectories with different trade-offs between accuracy, performance, and depend
 All engines implement the EngineProtocol interface.
 
 Available Engines:
-    BaseIntegrationEngine: Abstract base class for all integration engines
-    EulerIntegrationEngine: First-order Euler method (simple but less accurate)
-    RK4IntegrationEngine: Fourth-order Runge-Kutta method (default, good balance)
-    VelocityVerletIntegrationEngine: Velocity Verlet method (energy conservative)
-    SciPyIntegrationEngine: Advanced SciPy solvers (high accuracy, requires scipy)
+    - BaseIntegrationEngine: Abstract base class for all integration engines
+    - EulerIntegrationEngine: First-order Euler method (simple but less accurate)
+    - RK4IntegrationEngine: Fourth-order Runge-Kutta method (default, good balance)
+    - VelocityVerletIntegrationEngine: Velocity Verlet method (energy conservative)
+    - SciPyIntegrationEngine: Advanced SciPy solvers (high accuracy, requires scipy)
 
-Engine Selection Guidelines (reference doc/BenchmarkEngines.md):
+Engine Selection Guidelines:
     - Default: RK4IntegrationEngine (rk4_engine) - Good balance of speed and accuracy
-    - Research: SciPyIntegrationEngine (scipy_engine) - Requires scipy dependency
+    - Research: SciPyIntegrationEngine (scipy_engine) - Requires scipy installation
     - Educational: EulerIntegrationEngine (euler_engine) - Simple to understand
-    - Speed: cythonized_rk4_engine (requires pyballistic[exts])
+    - Speed: cythonized_rk4_engine - requires pyballistic[exts])
 
 Configuration:
     - All engines accept BaseEngineConfigDict for configuration.
     - SciPyIntegrationEngine additionally supports SciPyEngineConfigDict for advanced options
          like integration method selection and error tolerance settings.
 
-Example:
+Examples:
     >>> from pyballistic.engines import RK4IntegrationEngine, BaseEngineConfigDict
     >>> custom_config = BaseEngineConfigDict(cMinimumVelocity=50.0)
     
@@ -35,7 +35,7 @@ See Also:
     - pyballistic.generics.engine.EngineProtocol: Base protocol for engines
     - pyballistic.interface.Calculator: Main interface using engines
     - pyballistic.trajectory_data: Data structures for trajectory results
-    - doc/BenchmarkEngines.md: Performance comparison of engines
+    - docs/concepts/benchmarks.md: Performance comparison of engines
 """
 
 from .base_engine import *
