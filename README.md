@@ -34,7 +34,7 @@ https://pypi.org/project/pyballistic/
 https://pypi.org/project/pyballistic/#history
 
 [coverage]:
-https://github.com/dbookstaber/pyballistic/coverage.svg
+./coverage.svg
 
 [downloads]:
 https://img.shields.io/pepy/dt/pyballistic?style=flat-square
