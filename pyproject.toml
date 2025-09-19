@@ -2,12 +2,12 @@
 # Copyright 2024 David Bookstaber (https://github.com/dbookstaber)
 
 [build-system]
-requires = ["setuptools", "wheel", "tomli; python_version>='3.10'"]
+requires = ["setuptools", "wheel", "tomli; python_version<'3.11'"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyballistic"
-version = "2.2.0"
+version = "2.2.0rc1"
 
 authors = [
     { name = "o-murphy", email = "thehelixpg@gmail.com" },
@@ -15,8 +15,8 @@ authors = [
 ]
 description = "LGPL library for small arms ballistic calculations (Python 3)"
 readme = "README.md"
-requires-python = ">=3.10"
-keywords = ["pyballistic", "ballistics", "Cython", "ballistic calculator", "python", "ballistic solver"]
+requires-python = ">=3.9"
+keywords = ["pyballistic", "ballistics", "Cython", "ballistic calculator", "python", "python3"]
 license = { file = "LICENSE" }
 classifiers = [
     "Intended Audience :: Developers",
@@ -25,6 +25,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -82,8 +83,9 @@ line-length = 120
 "pyballistic.exts" = { path = "./pyballistic.exts" }  # required for `uv sync`
 
 [project.optional-dependencies]
-exts = ["pyballistic.exts==2.2.0"]
+exts = ["pyballistic.exts==2.2.0rc1"]
 charts = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
+visualize = ["matplotlib>=3.9", "pandas>=2.3.0", "numpy>=2"]
 scipy = ["numpy>=2", "scipy>=1.13.1"]
 dev = [
     "Cython>=3.0",

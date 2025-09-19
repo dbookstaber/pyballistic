@@ -30,8 +30,8 @@ If you have Python 3.10+ and `pip` installed, you're good to go.
 
 pyballistic has the following optional dependencies:
 
-* **[`pyballistic.exts`](internals/cython.md):** Cython based implementation of some classes to increase performance. [pyballistic.exts](https://pypi.org/project/pyballistic.exts) package.
-* **`visualize`:** Includes [matplotlib](https://matplotlib.org/) for creating [`charts`][pyballistic.trajectory_data.HitResult.plot] and [pandas](https://pandas.pydata.org/) for creating [`DataFrame tables`][pyballistic.trajectory_data.HitResult.dataframe].
+* **[`exts`](internals/cython.md):** Cython based implementation of some classes to increase performance. [pyballistic.exts](https://pypi.org/project/pyballistic.exts) package.
+* **`charts`:** Includes [matplotlib](https://matplotlib.org/) for creating [`charts`][pyballistic.trajectory_data.HitResult.plot] and [pandas](https://pandas.pydata.org/) for creating [`DataFrame tables`][pyballistic.trajectory_data.HitResult.dataframe].
 * **[`scipy`](https://scipy.org/):** Installs support for the `SciPyIntegrationEngine`.
 
 To install optional dependencies along with pyballistic:
@@ -39,25 +39,25 @@ To install optional dependencies along with pyballistic:
 === "pip"
 
     ```bash
-    # with the `pyballistic.exts` extra:
+    # with the cython extensions:
     pip install 'pyballistic[exts]'
     ```
 
     ```bash
-    # with dependencies for data visualisation    
-    pip install pyballistic[visualize]
+    # with dependencies for charting:
+    pip install pyballistic[charts]
     ```
 
 === "uv"
 
     ```bash
-    # with the `pyballistic.exts` extra:
+    # with the cython extensions:
     uv add 'pyballistic[exts]'
     ```
 
     ```bash
-    # with dependencies for data visualisation    
-    uv add  'pyballistic[visualize]'
+    # with dependencies for charting:
+    uv add 'pyballistic[charts]'
     ```
 
 You can also install requirements manually.  For example:
@@ -75,7 +75,7 @@ You can also install requirements manually.  For example:
 To install latest version from sources in editable mode:
 
 ```bash
-git clone github.com/o-murphy/pyballistic
+git clone github.com/dbookstaber/pyballistic
 cd pyballistic
 ```
 
