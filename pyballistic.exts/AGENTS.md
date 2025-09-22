@@ -1,10 +1,10 @@
 # AGENTS.md
 
 This (`pyballistic.exts`) is the optional Cython subproject of `pyballistic`. Its purpose is to provide maximum-speed engines that preserve parity with those in the root project:
-* `./pyballistic_exts/rk4_engine:CythonizedRK4IntegrationEngine` is high-speed version of root `RK4IntegrationEngine`. Entry-point name: `cythonized_rk4_engine` 
-* `./pyballistic_exts/euler_engine:CythonizedEulerIntegrationEngine` is high-speed version of root `EulerIntegrationEngine`. Entry-point name: `euler_rk4_engine` 
+* `pyballistic_exts.rk4_engine:CythonizedRK4IntegrationEngine` is high-speed version of root `RK4IntegrationEngine`. Entry-point name: `cythonized_rk4_engine` 
+* `pyballistic_exts.euler_engine:CythonizedEulerIntegrationEngine` is high-speed version of root `EulerIntegrationEngine`. Entry-point name: `cythonized_euler_engine` 
 
-**Root project `pyballistic` is source of truth for all functionality.**  However, `./pyballistic_exts` code files do not necessarily map 1-to-1 with root project modules.
+**Root project `pyballistic` is source of truth for all functionality.**  However, `pyballistic_exts` code files do not necessarily map 1-to-1 with root project modules.
 
 `pyballistic_exts` key files:
 * `base_engine.pyx/pxd` and `trajectory_data.pyx/pxd` reference `pyballistic/engines/base_engine.py` and `pyballistic/trajectory_data.py`
@@ -18,11 +18,11 @@ This (`pyballistic.exts`) is the optional Cython subproject of `pyballistic`. It
 From subproject root, `pytest tests` only test functionality unique to Cython and this subproject.
 * For coverage of Cython code, true line coverage requires compiling with CYTHON_TRACE; otherwise rely on tests passing and targeted smoke checks.
 
-To confirm core functionality run root project tests with cythonized engines. From `./pyballistic/`: `pytest --engine="cythonized_rk4_engine"`
+To confirm core functionality run root project tests with cythonized engines. From repo root: `pytest --engine="cythonized_rk4_engine"`
 
 # Build/Install notes
 - Use editable installs during iteration. From repo root: `pip install -e .[dev]`
-- To rebuild this subproject from parent repo root `pyballistic`: `pip install -e ./pyballistic.exts`
+- To rebuild this subproject from parent repo root: `pip install -e ./pyballistic.exts`
 
 # Hot paths & safety
 - Try to keep hot loops in nogil C math. Avoid Python object creation when scanning C buffers.

@@ -26,6 +26,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -47,6 +48,9 @@ cythonized_rk4_engine = "pyballistic_exts.rk4_engine:CythonizedRK4IntegrationEng
 
 [tool.setuptools]
 py-modules = ["pyballistic_exts"]
+
+[tool.setuptools.package-data]
+pyballistic_exts = ["py.typed"]
 
 
 [tool.setuptools.packages.find]

@@ -14,7 +14,7 @@ Protocol Definitions:
 Type Variables:
     ConfigT: Generic configuration type for engine parameters
 
-Example:
+Examples:
     >>> from pyballistic.generics import EngineProtocol
     >>> from pyballistic.engines.base_engine import BaseEngineConfigDict
     >>> 

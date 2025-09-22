@@ -3,7 +3,7 @@
 
 * The project offers interchangeable calculation "engines". List them via:
 ```python
-from py_ballisticcalc.interface import _EngineLoader
+from pyballistic.interface import _EngineLoader
 print("\nAvailable engines: " + str(sorted([e.name for e in _EngineLoader.iter_engines()])))
 ```
 
@@ -37,5 +37,5 @@ Both projects have unit tests in their root `/tests`. `pytest.markers` are defin
 * `./scripts/testall.ps1` will test all engines, optionally with coverage, and create a summary.
 
 ## Other checks
-* Docstrings: `pydocstyle .\py_ballisticcalc\`
+* Docstrings: `pydocstyle .\pyballistic\`
 * Docstring example tests: `.\scripts\run_doctest.py`

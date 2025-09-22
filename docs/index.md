@@ -22,7 +22,7 @@ This QuickStart gets you from a fresh environment to running basic ballistic cal
 
 === "pip"
     ```bash
-    pip install pyballistic[exts]
+    pip install "pyballistic[exts]"
     ```
     
 === "uv"

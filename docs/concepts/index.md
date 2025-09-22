@@ -55,7 +55,7 @@ result = calc.fire(zero, trajectory_range=Distance.Yard(500),
 ax = result.plot()
 
 # Compute and display danger space for a 10-inch target at 350 yards
-danger_space = shot_result.danger_space(Distance.Yard(350), Distance.Inch(10))
+danger_space = result.danger_space(Distance.Yard(350), Distance.Inch(10))
 danger_space.overlay(ax)
 plt.show()
 print(danger_space)
