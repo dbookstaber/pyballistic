@@ -18,12 +18,6 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Debug workflow context
-        run: |
-          echo "GITHUB_WORKFLOW_REF=$GITHUB_WORKFLOW_REF"
-          echo "GITHUB_WORKFLOW_SHA=$GITHUB_WORKFLOW_SHA"
-          echo "GITHUB_REF=$GITHUB_REF"
-          echo "GITHUB_SHA=$GITHUB_SHA"
       - uses: actions/checkout@v4
 
       - name: Install uv
@@ -39,9 +33,8 @@ jobs:
           python -m pip install tomli
           python hooks/version_check.py
 
-      - name: Install dependencies
+      - name: Install build tooling
         run: |
-          cp dist/pyballistic-exts-[0-9]* dist-exts/ 2>/dev/null || true
           python -m pip install build cibuildwheel
 
       - name: Build pure python package
@@ -53,7 +46,7 @@ jobs:
           python -m build --sdist --outdir ../dist
           cibuildwheel --output-dir ../dist
           cd ..
-            echo "Exts patterns:" && ls -la dist/pyballistic.exts-[0-9]* dist/pyballistic-exts-[0-9]* dist/pyballistic_exts-*.whl 2>/dev/null || true
+
       - name: List ./dist
         run: ls ./dist
 
@@ -66,61 +59,57 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-
-      - name: Publish all distributions (pyballistic + exts)
-        uses: pypa/gh-action-pypi-publish@release/v1
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts (Ubuntu)
+        uses: actions/download-artifact@v4
         with:
-          packages-dir: dist
-          skip-existing: true
-          cp ./dist-ubuntu/* dist/ || true
-          cp ./dist-windows/* dist/ || true
-          cp ./dist-macos-13/* dist/ || true
-          cp ./dist-macos-14/* dist/ || true
+          name: dist-ubuntu-latest
+          path: ./dist-ubuntu
+
+      - name: Download artifacts (Windows)
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-windows-latest
+          path: ./dist-windows
+
+      - name: Download artifacts (macOS 13)
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-macos-13
+          path: ./dist-macos-13
+
+      - name: Download artifacts (macOS 14)
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-macos-14
+          path: ./dist-macos-14
+
+      - name: Inspect downloaded artifacts
+        run: |
+          echo "Ubuntu:" && ls -la ./dist-ubuntu || true
+          echo "Windows:" && ls -la ./dist-windows || true
+          echo "macOS 13:" && ls -la ./dist-macos-13 || true
+          echo "macOS 14:" && ls -la ./dist-macos-14 || true
+
+      - name: Combine artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp ./dist-ubuntu/* dist/ 2>/dev/null || true
+          cp ./dist-windows/* dist/ 2>/dev/null || true
+          cp ./dist-macos-13/* dist/ 2>/dev/null || true
+          cp ./dist-macos-14/* dist/ 2>/dev/null || true
           echo "Combined dists:" && ls -la dist || true
-          # Fail fast if nothing combined
           if [ -z "$(ls -A dist 2>/dev/null)" ]; then
             echo "No distributions found in combined dist folder" >&2
             exit 1
           fi
 
-      - name: List ./dist
-        run: ls ./dist
-
-      - name: Split dists for core and exts
-        shell: bash
-        run: |
-          set -e
-          mkdir -p dist-core dist-exts
-          echo "Splitting combined dists..."
-          echo "Combined dist contents:" && ls -la dist || true
-          # Copy core (handles sdist and wheels)
-          cp dist/pyballistic-[0-9]* dist-core/ 2>/dev/null || true
-          cp dist/pyballistic-*.whl dist-core/ 2>/dev/null || true
-          # Copy exts: dot and underscore package names (sdist + wheels)
-          cp dist/pyballistic.exts-[0-9]* dist-exts/ 2>/dev/null || true
-          cp dist/pyballistic_exts-*.whl dist-exts/ 2>/dev/null || true
-          echo "Core dists:" && ls -la dist-core || true
-          echo "Exts dists:" && ls -la dist-exts || true
-          # Sanity checks with helpful debug
-          if [ -z "$(ls -A dist-core 2>/dev/null)" ]; then
-            echo "No core distributions were found after split" >&2
-            echo "Core patterns:" && ls -la dist/pyballistic-[0-9]* dist/pyballistic-*.whl 2>/dev/null || true
-            exit 1
-          fi
-          if [ -z "$(ls -A dist-exts 2>/dev/null)" ]; then
-            echo "No extensions distributions were found after split" >&2
-            echo "Exts patterns:" && ls -la dist/pyballistic.exts-[0-9]* dist/pyballistic_exts-*.whl 2>/dev/null || true
-            exit 1
-          fi
-
-      - name: Publish core package (pyballistic)
+      - name: Publish all distributions (pyballistic + exts)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist-core
-          skip-existing: true
-
-      - name: Publish extensions package (pyballistic.exts)
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-exts
+          packages-dir: dist
           skip-existing: true
