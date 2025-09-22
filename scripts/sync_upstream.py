@@ -40,6 +40,31 @@ WORKTREE = ROOT / ".sync_upstream"
 DIFFTREE = ROOT / ".sync_diff"
 
 
+# Centralized exclusion and text detection configuration
+EXCLUDED_TOP_DIRS = {
+    ".git",
+    ".github",
+    ".sync_upstream",
+    ".sync_diff",
+    ".venv",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".testall",
+    "site"
+}
+
+TEXT_EXTS = {
+    ".py", ".md", ".rst", ".toml", ".yml", ".yaml", ".ini", ".cfg", ".txt", ".json",
+    ".sh", ".ps1", ".bat", ".ipynb", ".in", ".pyi", ".pyx", ".pxd", ".pxi"
+}
+
+SPECIAL_TEXT_NAMES = {".gitignore", ".gitattributes", "Makefile", "LICENSE", "COPYING", "pre-commit", "sync_config.json"}
+
+def _is_excluded_top(rel: Path) -> bool:
+    return bool(rel.parts) and rel.parts[0] in EXCLUDED_TOP_DIRS
+
+
 def run(cmd: List[str], cwd: Optional[Path] = None) -> str:
     res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True, capture_output=True, text=True)
     return res.stdout.strip()
@@ -103,7 +128,7 @@ def transform_paths(tmp_dir: Path, mappings: List[Dict]):
     for root, dirs, files in os.walk(tmp_dir, topdown=False):
         root_path = Path(root)
         rel_root = root_path.relative_to(tmp_dir)
-        if rel_root.parts and rel_root.parts[0] in {".git", ".github"}:
+        if _is_excluded_top(rel_root):
             continue
         for name in files + dirs:
             src = root_path / name
@@ -157,16 +182,12 @@ def transform_paths(tmp_dir: Path, mappings: List[Dict]):
 
 
 def transform_text_files(tmp_dir: Path, replacements: List[Dict], binary_patterns: List[str]):
-    text_exts = {
-        ".py", ".md", ".rst", ".toml", ".yml", ".yaml", ".ini", ".cfg", ".txt", ".json",
-        ".sh", ".ps1", ".bat", ".ipynb", ".in", ".pyi", ".pyx", ".pxd", ".pxi"
-    }
     for path in tmp_dir.rglob("*"):
         if not path.is_file():
             continue
         if is_binary(path, binary_patterns):
             continue
-        if path.suffix and path.suffix.lower() not in text_exts:
+        if path.suffix and path.suffix.lower() not in TEXT_EXTS:
             try:
                 if path.stat().st_size > 1024 * 1024:
                     continue
@@ -190,11 +211,7 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: O
                     normalize_opts: Optional[Dict] = None):
     # Bring transformed files into repo, excluding configured paths; skip copying if content is effectively equal
     from fnmatch import fnmatch
-    text_exts = {
-        ".py", ".md", ".rst", ".toml", ".yml", ".yaml", ".ini", ".cfg", ".txt", ".json",
-        ".sh", ".ps1", ".bat", ".ipynb", ".in", ".pyi", ".pyx", ".pxd", ".pxi"
-    }
-    special_text_names = {".gitignore", ".gitattributes", "Makefile", "LICENSE", "COPYING", "pre-commit"}
+    # TEXT_EXTS and SPECIAL_TEXT_NAMES are defined globally
 
     def is_probably_text(p: Path) -> bool:
         try:
@@ -209,7 +226,7 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: O
     def norm_bytes_for_compare(p: Path):
         if normalize_opts is None:
             return p.read_bytes()
-        if (p.suffix.lower() not in text_exts) and (p.name not in special_text_names) and not is_probably_text(p):
+        if (p.suffix.lower() not in TEXT_EXTS) and (p.name not in SPECIAL_TEXT_NAMES) and not is_probably_text(p):
             return p.read_bytes()
         import unicodedata
         b = p.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
@@ -248,7 +265,7 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: O
 
     for src in tmp_dir.rglob("*"):
         rel = src.relative_to(tmp_dir)
-        if rel.parts and rel.parts[0] in {".git", ".github", ".sync_upstream", ".sync_diff"}:
+        if _is_excluded_top(rel):
             continue
         if include_patterns and not _matches(rel, include_patterns):
             continue
@@ -286,12 +303,12 @@ def copy_current_repo_snapshot(dst: Path, include_patterns: Optional[List[str]] 
             parts = item.relative_to(ROOT).parts
             if not parts:
                 continue
-            if parts[0] in {".git", ".github", ".sync_upstream", ".sync_diff"}:
+            if parts[0] in EXCLUDED_TOP_DIRS:
                 continue
             # Directories are created lazily when we copy matching files
         else:
             rel = item.relative_to(ROOT)
-            if rel.parts and rel.parts[0] in {".git", ".github", ".sync_upstream", ".sync_diff"}:
+            if _is_excluded_top(rel):
                 continue
             if not _matches(rel, include_patterns):
                 continue
@@ -309,7 +326,7 @@ def clean_deleted_files(tmp_dir: Path, exclude_paths: List[str], dest_root: Path
         rel = dest.relative_to(dest_root)
         rel_str = str(rel).replace("\\", "/")
         # Skip VCS and our temp work dirs
-        if rel_str.startswith(".git/") or (rel.parts and rel.parts[0] in {".git", ".github", ".sync_upstream", ".sync_diff"}):
+        if rel_str.startswith(".git/") or _is_excluded_top(rel):
             continue
         if not _matches(rel, include_patterns):
             continue
