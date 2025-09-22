@@ -102,43 +102,9 @@ jobs:
       - name: List ./dist
         run: ls ./dist
 
-      - name: Split dists for core and exts
-        shell: bash
-        run: |
-          set -e
-          mkdir -p dist-core dist-exts
-          echo "Splitting combined dists..."
-          echo "Combined dist contents:" && ls -la dist || true
-          # Core patterns
-          cp dist/pyballistic-[0-9]* dist-core/ 2>/dev/null || true
-          cp dist/pyballistic-*.whl dist-core/ 2>/dev/null || true
-          # Exts patterns: dot/underscore/hyphen
-          cp dist/pyballistic.exts-[0-9]* dist-exts/ 2>/dev/null || true
-          cp dist/pyballistic-exts-[0-9]* dist-exts/ 2>/dev/null || true
-          cp dist/pyballistic_exts-*.whl dist-exts/ 2>/dev/null || true
-          echo "Core dists:" && ls -la dist-core || true
-          echo "Exts dists:" && ls -la dist-exts || true
-          if [ -z "$(ls -A dist-core 2>/dev/null)" ]; then
-            echo "No core distributions were found after split" >&2
-            echo "Core patterns:" && ls -la dist/pyballistic-[0-9]* dist/pyballistic-*.whl 2>/dev/null || true
-            exit 1
-          fi
-          if [ -z "$(ls -A dist-exts 2>/dev/null)" ]; then
-            echo "No extensions distributions were found after split" >&2
-            echo "Exts patterns:" && ls -la dist/pyballistic.exts-[0-9]* dist/pyballistic-exts-[0-9]* dist/pyballistic_exts-*.whl 2>/dev/null || true
-            exit 1
-          fi
-
-      - name: Publish core package (TestPyPI)
+      - name: Publish all distributions (TestPyPI)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
           repository-url: https://test.pypi.org/legacy/
-          packages-dir: dist-core
-
-      - name: Publish extensions package (TestPyPI)
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-          repository-url: https://test.pypi.org/legacy/
-          packages-dir: dist-exts
+          packages-dir: dist
