@@ -6,10 +6,13 @@ site_url: https://dbookstaber.github.io/pyballistic/
 nav:
 - Get started:
   - QuickStart: index.md
+#  - Why use py-balllisticcalc: why.md
   - Installation: install.md
 #  - Examples: examples/Examples
   - Help: help.md
   - Contributing: contributing.md
+#  - Version policy: version-policy.md
+#  - Changelog: changelog.md
 - Concepts:
   - Basics: concepts/index.md
   - "📏 Units": concepts/unit.md
@@ -33,6 +36,9 @@ nav:
     - "🪂 DragModel": concepts/drag_model.md
   - "📈 Trajectory Data": concepts/trajectory_data.md
   - "📐 Vector": concepts/vector.md
+#    - Interface:
+#    - Logger: concepts/logger.md
+#  - Performance:
 - API Documentation:
     - Overview: api/index.md
     - Calculator:
@@ -56,6 +62,8 @@ nav:
       - Dimensions: api/units/dimensions.md
       - PreferredUnits: api/units/preferred_units.md
       - Vector: api/vector.md
+#    - Engines: api/engines.md
+#    - Logger: api/logger.md
 - Internals:
   - Architecture: internals/architecture.md
   - Developer Details: internals/details.md
@@ -92,7 +100,7 @@ theme:
     - content.tabs.link
     - content.code.annotate
     - content.code.copy
-#    - announce.dismiss
+    # - announce.dismiss
     - mermaid
     - navigation.tabs
     - navigation.instant

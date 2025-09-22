@@ -75,7 +75,7 @@ You can also install requirements manually.  For example:
 To install latest version from sources in editable mode:
 
 ```bash
-git clone github.com/o-murphy/pyballistic
+git clone github.com/dbookstaber/pyballistic
 cd pyballistic
 ```
 

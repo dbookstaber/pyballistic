@@ -1,5 +1,8 @@
 """LGPL library for small arms ballistic calculations."""
 
+import importlib.metadata
+
+__version__ = importlib.metadata.version("pyballistic")
 __author__ = "o-murphy"
 __copyright__ = (
     "Copyright 2023 Dmytro Yaroshenko (https://github.com/o-murphy)",
@@ -85,7 +88,7 @@ def _load_config(filepath: Optional[str] = None, suppress_warnings: bool = False
 
 
 def _basic_config(filename: Optional[str] = None,
-                  preferred_units: Optional[Dict[str, Unit]] = None,
+                  preferred_units: Optional[Dict[str, Unit]] = None, 
                   suppress_warnings: bool = False) -> None:
     """Load preferred units from file or Mapping.
     
