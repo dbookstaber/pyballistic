@@ -2,166 +2,166 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/about/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/contributing/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/contributors/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/help/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/install/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/constants/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/drag_model/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/drag_tables/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/hit_result/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/trajectory_data/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/vector/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/calculator/engines/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/calculator/interface/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/calculator/protocol/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/conditions/atmo/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/conditions/shot/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/conditions/shotprops/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/conditions/wind/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/munition/ammo/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/munition/sight/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/munition/weapon/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/units/dimensions/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/api/units/preferred_units/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/benchmarks/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/drag_model/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/engines/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/trajectory_data/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/unit/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/vector/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/conditions/atmo/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/conditions/shot/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/conditions/wind/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/munition/ammo/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/concepts/munition/weapon/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/internals/architecture/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/internals/cython/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/internals/details/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
     <url>
          <loc>https://dbookstaber.github.io/pyballistic/internals/logger/</loc>
-         <lastmod>2025-09-19</lastmod>
+         <lastmod>2025-09-22</lastmod>
     </url>
 </urlset>

@@ -1122,8 +1122,7 @@ pytest<span class="w"> </span>--engine<span class="o">=</span><span class="s2">"
 <h3 id="build-documentation">Build Documentation<a class="headerlink" href="#build-documentation" title="Permanent link">¶</a></h3>
 <p>If you have made any changes affecting the documentation (including changes to function signatures, class definitions, or docstrings that will appear in the API documentation), make sure the documentation builds successfully.</p>
 <p>We use <code>mkdocs-material[imaging]</code> to support social previews.
-You can find directions on how to install the required
-dependencies <a href="https://squidfunk.github.io/mkdocs-material/plugins/requirements/image-processing/">here</a>.</p>
+You can find directions on how to install the required dependencies <a href="https://squidfunk.github.io/mkdocs-material/plugins/requirements/image-processing/">here</a>.</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio"><input id="__tabbed_3_2" name="__tabbed_3" type="radio"><div class="tabbed-labels"><label for="__tabbed_3_1">pip</label><label for="__tabbed_3_2">uv</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
@@ -1138,12 +1137,10 @@ uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </
 </div>
 </div>
 </input></input></div>
-<div class="language-bash highlight"><pre><span></span><code><span class="c1"># Rebuild docs locally before commiting them to the branch   </span>
-mkdocs<span class="w"> </span>build
-
-<span class="c1"># Use this command to serve docs locally </span>
-mkdocs<span class="w"> </span>serve
-</code></pre></div>
+<ul>
+<li><code>mkdocs build</code> will populate a <code>./site</code> folder with HTML.</li>
+<li><code>mkdocs serve</code> will build and serve the HTML via local connection.</li>
+</ul>
 <p>If this isn't working due to issues with the imaging plugin, try commenting out the <code>social</code> plugin line in <code>mkdocs.yml</code>
 and running <code>mkdocs build</code> again.</p>
 <h3 id="commit-and-push-your-changes">Commit and push your changes<a class="headerlink" href="#commit-and-push-your-changes" title="Permanent link">¶</a></h3>
