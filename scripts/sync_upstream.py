@@ -25,15 +25,14 @@ Notes:
 - You can also set `SYNC_REF` env var instead of `--ref`.
 - Runs `git add -A` when `--stage` (or when neither `--show-diff` nor `--dry-run` is provided).
 """
+import argparse
 import json
 import os
-import re
 import shutil
-import subprocess
-import argparse
 import stat
+import subprocess
 from pathlib import Path
-from typing import Iterable, List, Dict
+from typing import Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "sync_config.json"
@@ -41,7 +40,7 @@ WORKTREE = ROOT / ".sync_upstream"
 DIFFTREE = ROOT / ".sync_diff"
 
 
-def run(cmd: List[str], cwd: Path | None = None) -> str:
+def run(cmd: List[str], cwd: Optional[Path] = None) -> str:
     res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True, capture_output=True, text=True)
     return res.stdout.strip()
 
@@ -58,8 +57,45 @@ def is_binary(path: Path, binary_patterns: List[str]) -> bool:
 
 def copy_tree(src: Path, dst: Path):
     if dst.exists():
-        shutil.rmtree(dst)
+        try:
+            shutil.rmtree(dst, ignore_errors=True)
+        except OSError:
+            pass
     shutil.copytree(src, dst)
+
+
+def _make_writable(path: Path) -> None:
+    try:
+        if path.is_file() or path.is_symlink():
+            try:
+                os.chmod(path, stat.S_IWRITE)
+            except OSError:
+                pass
+            return
+        for root, dirs, files in os.walk(path):
+            for name in files:
+                p = Path(root) / name
+                try:
+                    os.chmod(p, stat.S_IWRITE)
+                except OSError:
+                    pass
+            for name in dirs:
+                p = Path(root) / name
+                try:
+                    os.chmod(p, stat.S_IWRITE)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def _rmtree_safe(path: Path) -> None:
+    try:
+        if path.exists():
+            _make_writable(path)
+            shutil.rmtree(path, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def transform_paths(tmp_dir: Path, mappings: List[Dict]):
@@ -74,50 +110,56 @@ def transform_paths(tmp_dir: Path, mappings: List[Dict]):
             new_name = name
             for m in mappings:
                 new_name = new_name.replace(m["from"], m["to"])
-            if new_name != name:
-                target = root_path / new_name
-                try:
-                    # Prefer atomic replace if available
-                    os.replace(src, target)
-                except FileExistsError:
-                    # Target exists: remove then retry
+            if new_name == name:
+                continue
+            target = root_path / new_name
+            try:
+                if target.exists():
                     if target.is_dir():
-                        shutil.rmtree(target, onerror=_on_rm_error)
+                        try:
+                            shutil.rmtree(target, ignore_errors=True)
+                        except OSError:
+                            pass
                     else:
                         try:
                             os.chmod(target, stat.S_IWRITE)
-                        except Exception:
+                        except OSError:
                             pass
                         target.unlink(missing_ok=True)
-                    os.replace(src, target)
-                except PermissionError:
-                    # Windows quirks: try via temp hop
-                    temp = root_path / (f".{new_name}.tmp_rename")
+                os.replace(src, target)
+            except PermissionError:
+                # Fallback strategies for Windows
+                if src.is_dir():
                     try:
-                        os.replace(src, temp)
+                        shutil.move(str(src), str(target))
+                    except OSError:
                         if target.exists():
-                            if target.is_dir():
-                                shutil.rmtree(target, onerror=_on_rm_error)
-                            else:
-                                try:
-                                    os.chmod(target, stat.S_IWRITE)
-                                except Exception:
-                                    pass
-                                target.unlink(missing_ok=True)
-                        os.replace(temp, target)
-                    finally:
-                        if temp.exists():
-                            # Best-effort cleanup
                             try:
-                                os.replace(temp, target)
-                            except Exception:
-                                shutil.rmtree(temp, onerror=_on_rm_error)
+                                shutil.rmtree(target, ignore_errors=True)
+                            except OSError:
+                                pass
+                        shutil.copytree(src, target)
+                        try:
+                            shutil.rmtree(src, ignore_errors=True)
+                        except OSError:
+                            pass
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, target)
+                    try:
+                        os.chmod(src, stat.S_IWRITE)
+                    except OSError:
+                        pass
+                    try:
+                        src.unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
 
 def transform_text_files(tmp_dir: Path, replacements: List[Dict], binary_patterns: List[str]):
     text_exts = {
         ".py", ".md", ".rst", ".toml", ".yml", ".yaml", ".ini", ".cfg", ".txt", ".json",
-        ".sh", ".ps1", ".bat", ".ipynb"
+        ".sh", ".ps1", ".bat", ".ipynb", ".in", ".pyi", ".pyx", ".pxd", ".pxi"
     }
     for path in tmp_dir.rglob("*"):
         if not path.is_file():
@@ -125,22 +167,27 @@ def transform_text_files(tmp_dir: Path, replacements: List[Dict], binary_pattern
         if is_binary(path, binary_patterns):
             continue
         if path.suffix and path.suffix.lower() not in text_exts:
-            # best-effort: still try small files
-            if path.stat().st_size > 1024 * 1024:
+            try:
+                if path.stat().st_size > 1024 * 1024:
+                    continue
+            except OSError:
                 continue
         try:
             content = path.read_text(encoding="utf-8")
-        except Exception:
+        except (OSError, UnicodeError):
             continue
         orig = content
         for rep in replacements:
             content = content.replace(rep["from"], rep["to"])
         if content != orig:
-            path.write_text(content, encoding="utf-8")
+            try:
+                path.write_text(content, encoding="utf-8")
+            except OSError:
+                pass
 
 
-def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: List[str] | None = None,
-                    normalize_opts: Dict | None = None):
+def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: Optional[List[str]] = None,
+                    normalize_opts: Optional[Dict] = None):
     # Bring transformed files into repo, excluding configured paths; skip copying if content is effectively equal
     from fnmatch import fnmatch
     text_exts = {
@@ -156,7 +203,7 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: L
             if b"\x00" in head:
                 return False
             return True
-        except Exception:
+        except OSError:
             return False
 
     def norm_bytes_for_compare(p: Path):
@@ -170,7 +217,7 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: L
             b = b[3:]
         try:
             s = b.decode("utf-8", errors="replace")
-        except Exception:
+        except UnicodeError:
             s = b.decode("latin-1", errors="replace")
         norm_form = (normalize_opts.get("unicode_norm") or "NFKC").upper()
         if norm_form != "NONE":
@@ -192,11 +239,11 @@ def rsync_into_repo(tmp_dir: Path, exclude_paths: List[str], include_patterns: L
                 try:
                     if a.read_bytes() == b.read_bytes():
                         return True
-                except Exception:
+                except OSError:
                     pass
                 return norm_bytes_for_compare(a) == norm_bytes_for_compare(b)
             return False
-        except Exception:
+        except OSError:
             return False
 
     for src in tmp_dir.rglob("*"):
@@ -221,7 +268,7 @@ def _posix(rel: Path) -> str:
     return str(rel).replace("\\", "/")
 
 
-def _matches(rel: Path, patterns: List[str] | None) -> bool:
+def _matches(rel: Path, patterns: Optional[List[str]]) -> bool:
     if not patterns:
         return True
     from fnmatch import fnmatch
@@ -229,9 +276,9 @@ def _matches(rel: Path, patterns: List[str] | None) -> bool:
     return any(fnmatch(rel_s, pat) for pat in patterns)
 
 
-def copy_current_repo_snapshot(dst: Path, include_patterns: List[str] | None = None):
+def copy_current_repo_snapshot(dst: Path, include_patterns: Optional[List[str]] = None):
     if dst.exists():
-        shutil.rmtree(dst, onerror=_on_rm_error)
+        _rmtree_safe(dst)
     dst.mkdir(parents=True, exist_ok=True)
     for item in ROOT.rglob("*"):
         if item.is_dir():
@@ -253,7 +300,7 @@ def copy_current_repo_snapshot(dst: Path, include_patterns: List[str] | None = N
             shutil.copy2(item, target)
 
 
-def clean_deleted_files(tmp_dir: Path, exclude_paths: List[str], dest_root: Path = ROOT, include_patterns: List[str] | None = None):
+def clean_deleted_files(tmp_dir: Path, exclude_paths: List[str], dest_root: Path = ROOT, include_patterns: Optional[List[str]] = None):
     from fnmatch import fnmatch
     # Remove files in repo that no longer exist in tmp_dir, except excluded paths
     for dest in dest_root.rglob("*"):
@@ -261,7 +308,8 @@ def clean_deleted_files(tmp_dir: Path, exclude_paths: List[str], dest_root: Path
             continue
         rel = dest.relative_to(dest_root)
         rel_str = str(rel).replace("\\", "/")
-        if rel_str.startswith(".git/") or rel.parts and rel.parts[0] in {".git", ".github"}:
+        # Skip VCS and our temp work dirs
+        if rel_str.startswith(".git/") or (rel.parts and rel.parts[0] in {".git", ".github", ".sync_upstream", ".sync_diff"}):
             continue
         if not _matches(rel, include_patterns):
             continue
@@ -271,7 +319,7 @@ def clean_deleted_files(tmp_dir: Path, exclude_paths: List[str], dest_root: Path
         if not src.exists():
             try:
                 dest.unlink()
-            except Exception:
+            except OSError:
                 pass
 
 
@@ -282,25 +330,16 @@ essential_gitconfig = """
 """.strip()
 
 
-def ensure_bot_identity():
+def ensure_bot_identity() -> None:
     # Configure identity if running in CI
     try:
         run(["git", "config", "user.name"])
-    except Exception:
+    except subprocess.CalledProcessError:
         run(["git", "config", "user.name", "github-actions[bot]"])
         run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"])
 
 
-def _on_rm_error(func, path, exc_info):
-    # Make read-only files writable then retry removal (Windows safety)
-    try:
-        os.chmod(path, stat.S_IWRITE)
-    except Exception:
-        pass
-    try:
-        func(path)
-    except Exception:
-        pass
+# _on_rm_error no longer needed; replaced by _rmtree_safe
 
 
 def main():
@@ -332,7 +371,7 @@ def main():
     ensure_bot_identity()
 
     if WORKTREE.exists():
-        shutil.rmtree(WORKTREE, onerror=_on_rm_error)
+        _rmtree_safe(WORKTREE)
     WORKTREE.mkdir(parents=True, exist_ok=True)
 
     # Clone upstream fresh into worktree
@@ -402,7 +441,7 @@ def main():
                     s = s[3:]
                 try:
                     t = s.decode("utf-8", errors="replace")
-                except Exception:
+                except UnicodeError:
                     t = s.decode("latin-1", errors="replace")
                 # Unicode normalization
                 if args.unicode_norm and args.unicode_norm.upper() != "NONE":
@@ -426,7 +465,7 @@ def main():
                     if ca != cb:
                         # Include length hint in reason
                         return True, f"text differs (norm={args.unicode_norm}{', ignore-ws' if args.ignore_ws else ''})"
-                except Exception:
+                except OSError:
                     # If any read issue, assume possibly changed
                     return True, "read error"
                 return False, "equal"
@@ -483,9 +522,9 @@ def main():
                     print(f"{_posix(rel)}: {changed} ({reason})")
                     # Optional hash print
                     if args.hash_check and changed in {"same", "changed"}:
-                        import hashlib
                         def sha256(p: Path) -> str:
-                            h = hashlib.sha256()
+                            import hashlib as _hashlib
+                            h = _hashlib.sha256()
                             with p.open('rb') as f:
                                 for chunk in iter(lambda: f.read(8192), b''):
                                     h.update(chunk)
@@ -495,7 +534,7 @@ def main():
                             hb = sha256(DIFFTREE / rel)
                             print(f"  sha256 current:  {ha}")
                             print(f"  sha256 new:      {hb}")
-                        except Exception as e:
+                        except OSError as e:
                             print(f"  sha256: error {e}")
                     # Optional sample unified diff
                     if args.sample_diff and changed == "changed":
@@ -510,15 +549,15 @@ def main():
                                 print(f"  {ln[:500]}")
                             if len(diff_lines) > max_show:
                                 print(f"  ... truncated {len(diff_lines) - max_show} more lines ...")
-                        except Exception as e:
+                        except (OSError, UnicodeError) as e:
                             print(f"  diff error: {e}")
         finally:
             if not args.keep_temp:
-                shutil.rmtree(DIFFTREE, onerror=_on_rm_error)
+                _rmtree_safe(DIFFTREE)
             else:
                 print(f"[keep-temp] Retained snapshot at {DIFFTREE}")
             if not args.keep_upstream:
-                shutil.rmtree(WORKTREE, onerror=_on_rm_error)
+                _rmtree_safe(WORKTREE)
             else:
                 print(f"[keep-upstream] Retained upstream clone at {WORKTREE}")
         print("[dry-run] Diff displayed based on transforms in", WORKTREE)
@@ -548,7 +587,7 @@ def main():
             run(["git", "add", "-A"], cwd=ROOT)
     # Cleanup upstream clone unless requested to keep
     if not args.keep_upstream:
-        shutil.rmtree(WORKTREE, onerror=_on_rm_error)
+        _rmtree_safe(WORKTREE)
     else:
         print(f"[keep-upstream] Retained upstream clone at {WORKTREE}")
 
