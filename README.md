@@ -78,13 +78,13 @@ https://dbookstaber.github.io/pyballistic
 pip install pyballistic
 
 # Using precompiled backend (improves performance)
-pip install pyballistic[exts]
+pip install "pyballistic[exts]"
 
 # Using matplotlib and pandas uses additional dependencies
-pip install pyballistic[charts]
+pip install "pyballistic[charts]"
 
 # Get everything, including the SciPy-powered calculation engine
-pip install pyballistic[exts,charts,scipy]
+pip install "pyballistic[exts,charts,scipy]"
 ```
 
 ----

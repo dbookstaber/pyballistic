@@ -3,6 +3,7 @@ name: Upload Python Package to PyPI
 on:
   release:
     types: [ published, edited ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,6 +18,12 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Debug workflow context
+        run: |
+          echo "GITHUB_WORKFLOW_REF=$GITHUB_WORKFLOW_REF"
+          echo "GITHUB_WORKFLOW_SHA=$GITHUB_WORKFLOW_SHA"
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "GITHUB_SHA=$GITHUB_SHA"
       - uses: actions/checkout@v4
 
       - name: Install uv
@@ -34,6 +41,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          cp dist/pyballistic-exts-[0-9]* dist-exts/ 2>/dev/null || true
           python -m pip install build cibuildwheel
 
       - name: Build pure python package
@@ -45,7 +53,7 @@ jobs:
           python -m build --sdist --outdir ../dist
           cibuildwheel --output-dir ../dist
           cd ..
-
+            echo "Exts patterns:" && ls -la dist/pyballistic.exts-[0-9]* dist/pyballistic-exts-[0-9]* dist/pyballistic_exts-*.whl 2>/dev/null || true
       - name: List ./dist
         run: ls ./dist
 
@@ -115,26 +123,27 @@ jobs:
       - name: Split dists for core and exts
         shell: bash
         run: |
+          set -e
           mkdir -p dist-core dist-exts
-          # Route files based on filename (handles dot vs underscore)
-          shopt -s nullglob
-          for f in dist/*; do
-            base="$(basename "$f")"
-            if [[ "$base" == pyballistic.exts-* || "$base" == pyballistic_exts-* ]]; then
-              cp "$f" dist-exts/
-            elif [[ "$base" == pyballistic-* ]]; then
-              cp "$f" dist-core/
-            fi
-          done
+          echo "Splitting combined dists..."
+          echo "Combined dist contents:" && ls -la dist || true
+          # Copy core (handles sdist and wheels)
+          cp dist/pyballistic-[0-9]* dist-core/ 2>/dev/null || true
+          cp dist/pyballistic-*.whl dist-core/ 2>/dev/null || true
+          # Copy exts: dot and underscore package names (sdist + wheels)
+          cp dist/pyballistic.exts-[0-9]* dist-exts/ 2>/dev/null || true
+          cp dist/pyballistic_exts-*.whl dist-exts/ 2>/dev/null || true
           echo "Core dists:" && ls -la dist-core || true
           echo "Exts dists:" && ls -la dist-exts || true
-          # Sanity checks
+          # Sanity checks with helpful debug
           if [ -z "$(ls -A dist-core 2>/dev/null)" ]; then
             echo "No core distributions were found after split" >&2
+            echo "Core patterns:" && ls -la dist/pyballistic-[0-9]* dist/pyballistic-*.whl 2>/dev/null || true
             exit 1
           fi
           if [ -z "$(ls -A dist-exts 2>/dev/null)" ]; then
             echo "No extensions distributions were found after split" >&2
+            echo "Exts patterns:" && ls -la dist/pyballistic.exts-[0-9]* dist/pyballistic_exts-*.whl 2>/dev/null || true
             exit 1
           fi
 
