@@ -10,8 +10,8 @@ name = "pyballistic"
 version = "2.2.0"
 
 authors = [
-    { name = "o-murphy", email = "thehelixpg@gmail.com" },
-    { name = "dbookstaber", email = "bookstaber@gmail.com" }
+    { name = "dbookstaber", email = "bookstaber@gmail.com" },
+    { name = "o-murphy", email = "thehelixpg@gmail.com" }
 ]
 description = "LGPL library for small arms ballistic calculations (Python 3)"
 readme = "README.md"

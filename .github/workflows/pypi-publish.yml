@@ -87,26 +87,56 @@ jobs:
           name: dist-macos-14
           path: ./dist-macos-14
 
+      - name: Inspect downloaded artifacts
+        run: |
+          echo "Ubuntu:" && ls -la ./dist-ubuntu || true
+          echo "Windows:" && ls -la ./dist-windows || true
+          echo "macOS 13:" && ls -la ./dist-macos-13 || true
+          echo "macOS 14:" && ls -la ./dist-macos-14 || true
+
       - name: Combine artifacts
+        shell: bash
         run: |
           mkdir -p dist
           cp ./dist-ubuntu/* dist/ || true
           cp ./dist-windows/* dist/ || true
           cp ./dist-macos-13/* dist/ || true
           cp ./dist-macos-14/* dist/ || true
+          echo "Combined dists:" && ls -la dist || true
+          # Fail fast if nothing combined
+          if [ -z "$(ls -A dist 2>/dev/null)" ]; then
+            echo "No distributions found in combined dist folder" >&2
+            exit 1
+          fi
 
       - name: List ./dist
         run: ls ./dist
 
       - name: Split dists for core and exts
+        shell: bash
         run: |
           mkdir -p dist-core dist-exts
-          # Copy core package files
-          for f in dist/pyballistic-*; do cp "$f" dist-core/ 2>/dev/null || true; done
-          # Copy extensions package files
-          for f in dist/pyballistic.exts-*; do cp "$f" dist-exts/ 2>/dev/null || true; done
+          # Route files based on filename (handles dot vs underscore)
+          shopt -s nullglob
+          for f in dist/*; do
+            base="$(basename "$f")"
+            if [[ "$base" == pyballistic.exts-* || "$base" == pyballistic_exts-* ]]; then
+              cp "$f" dist-exts/
+            elif [[ "$base" == pyballistic-* ]]; then
+              cp "$f" dist-core/
+            fi
+          done
           echo "Core dists:" && ls -la dist-core || true
           echo "Exts dists:" && ls -la dist-exts || true
+          # Sanity checks
+          if [ -z "$(ls -A dist-core 2>/dev/null)" ]; then
+            echo "No core distributions were found after split" >&2
+            exit 1
+          fi
+          if [ -z "$(ls -A dist-exts 2>/dev/null)" ]; then
+            echo "No extensions distributions were found after split" >&2
+            exit 1
+          fi
 
       - name: Publish core package (pyballistic)
         uses: pypa/gh-action-pypi-publish@release/v1
