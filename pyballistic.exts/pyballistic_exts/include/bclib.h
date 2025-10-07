@@ -15,6 +15,7 @@ extern const double cLowestTempF;
 extern const double mToFeet;
 
 extern const double cMaxWindDistanceFeet;
+extern const double cEarthAngularVelocityRadS;
 
 typedef struct {
     double cStepMultiplier;
@@ -30,6 +31,7 @@ typedef struct {
     double a;
     double b;
     double c;
+    double d;  // PCHIP cubic constant term for segment (y at left knot)
 } CurvePoint_t;
 
 typedef struct {
@@ -60,7 +62,21 @@ void Atmosphere_t_updateDensityFactorAndMachForAltitude(
     const Atmosphere_t *atmo_ptr,
     double altitude,
     double *density_ratio_ptr,
-    double *mach_ptr);
+    double *mach_ptr
+);
+
+typedef struct {
+    double sin_lat;
+    double cos_lat;
+    double sin_az;
+    double cos_az;
+    double range_east;
+    double range_north;
+    double cross_east;
+    double cross_north;
+    int flat_fire_only;
+    double muzzle_velocity_fps;
+} Coriolis_t;
 
 typedef struct {
     double bc;
@@ -82,6 +98,7 @@ typedef struct {
     double stability_coefficient;
     int filter_flags;
     Atmosphere_t atmo;
+    Coriolis_t coriolis;
 } ShotProps_t;
 
 void ShotProps_t_free(ShotProps_t *shot_props_ptr);
@@ -128,31 +145,22 @@ typedef struct {
     V3dT last_vector_cache;
 } WindSock_t;
 
+void WindSock_t_init(WindSock_t *ws, size_t length, Wind_t *winds);
 void WindSock_t_free(WindSock_t *ws);
 V3dT WindSock_t_currentVector(WindSock_t *wind_sock);
 int WindSock_t_updateCache(WindSock_t *ws);
 V3dT WindSock_t_vectorForRange(WindSock_t *ws, double next_range_param);
-
-typedef struct {
-    int filter;
-    int current_flag;
-    int seen_zero;
-    double time_step;
-    double range_step;
-    double time_of_last_record;
-    double next_record_distance;
-    double previous_mach;
-    double previous_time;
-    V3dT previous_position;
-    V3dT previous_velocity;
-    double previous_v_mach;
-    double look_angle;
-} TrajDataFilter_t;
 
 
 // helpers
 double getCorrection(double distance, double offset);
 double calculateEnergy(double bulletWeight, double velocity);
 double calculateOgw(double bulletWeight, double velocity);
+
+void Coriolis_t_coriolis_acceleration_local(
+    const Coriolis_t *coriolis_ptr,
+    V3dT *velocity_ptr,
+    V3dT *accel_ptr
+);
 
 #endif // TYPES_H

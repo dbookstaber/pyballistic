@@ -5,18 +5,22 @@ Because storing each step in a CBaseTrajSeq is practically costless, we always r
 """
 from cython cimport final
 from libc.math cimport fabs, sin, cos, fmin, fmax
+# noinspection PyUnresolvedReferences
 from pyballistic_exts.cy_bindings cimport (
     ShotProps_t,
     ShotProps_t_dragByMach,
     Atmosphere_t_updateDensityFactorAndMachForAltitude,
+    Coriolis_t_coriolis_acceleration_local,
 )
+# noinspection PyUnresolvedReferences
 from pyballistic_exts.base_engine cimport (
     CythonizedBaseIntegrationEngine,
     WindSock_t_currentVector,
     WindSock_t_vectorForRange,
 )
-
+# noinspection PyUnresolvedReferences
 from pyballistic_exts.v3d cimport V3dT, add, sub, mag, mulS
+# noinspection PyUnresolvedReferences
 from pyballistic_exts.base_traj_seq cimport CBaseTrajSeq
 
 import warnings
@@ -71,12 +75,13 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             V3dT relative_velocity
             V3dT gravity_vector
             V3dT wind_vector
+            V3dT coriolis_accel
             double calc_step = self._shot_s.calc_step
             
             # Early binding of configuration constants
             double _cMinimumVelocity = self._config_s.cMinimumVelocity
             double _cMinimumAltitude = self._config_s.cMinimumAltitude
-            double _cMaximumDrop = -abs(self._config_s.cMaximumDrop)
+            double _cMaximumDrop = -fabs(self._config_s.cMaximumDrop)
             
             # Working variables
             object termination_reason = None
@@ -158,11 +163,17 @@ cdef class CythonizedEulerIntegrationEngine(CythonizedBaseIntegrationEngine):
             km = density_ratio * ShotProps_t_dragByMach(shot_props_ptr, relative_speed / mach)
             drag = km * relative_speed
             
-            # 4. Apply drag and gravity to velocity
+            # 4. Apply drag, gravity, and Coriolis to velocity
             _tv = mulS(&relative_velocity, drag)
-            _tv = sub(&_tv, &gravity_vector)
+            _tv = sub(&gravity_vector, &_tv)
+            
+            # Add Coriolis acceleration if available
+            if not shot_props_ptr.coriolis.flat_fire_only:
+                Coriolis_t_coriolis_acceleration_local(&shot_props_ptr.coriolis, &velocity_vector, &coriolis_accel)
+                _tv = add(&_tv, &coriolis_accel)
+            
             _tv = mulS(&_tv, delta_time)
-            velocity_vector = sub(&velocity_vector, &_tv)
+            velocity_vector = add(&velocity_vector, &_tv)
             
             # 5. Update position based on new velocity
             delta_range_vector = mulS(&velocity_vector, delta_time)

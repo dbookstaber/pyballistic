@@ -77,7 +77,7 @@ print(danger_space)
 	[`pyballistic.drag_model.DragModel`][pyballistic.drag_model.DragModel]<br>
 	[`pyballistic.conditions.Atmo`][pyballistic.conditions.Atmo]<br>
 	[`pyballistic.munition.Weapon`][pyballistic.munition.Weapon]<br>
-	[`pyballistic.conditions.Shot`][pyballistic.conditions.Shot]<br>
+	[`pyballistic.shot.Shot`][pyballistic.shot.Shot]<br>
 	[`pyballistic.trajectory_data.TrajectoryData`][pyballistic.trajectory_data.TrajectoryData]<br>
 	[`pyballistic.trajectory_data.HitResult`][pyballistic.trajectory_data.HitResult]<br>
 	[`pyballistic.unit.Unit`][pyballistic.unit.Unit]<br>

@@ -12,11 +12,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-13, macos-14 ]
+        os: [ ubuntu-latest, windows-latest, macos-15, macos-14 ]
 
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -74,11 +74,11 @@ jobs:
           name: dist-windows-latest
           path: ./dist-windows
 
-      - name: Download artifacts (macOS 13)
+      - name: Download artifacts (macOS 15)
         uses: actions/download-artifact@v4
         with:
-          name: dist-macos-13
-          path: ./dist-macos-13
+          name: dist-macos-15
+          path: ./dist-macos-15
 
       - name: Download artifacts (macOS 14)
         uses: actions/download-artifact@v4
@@ -91,7 +91,7 @@ jobs:
           mkdir -p dist
           cp ./dist-ubuntu/* dist/ || true
           cp ./dist-windows/* dist/ || true
-          cp ./dist-macos-13/* dist/ || true
+          cp ./dist-macos-15/* dist/ || true
           cp ./dist-macos-14/* dist/ || true
           echo "Combined dists:" && ls -la dist || true
           if [ -z "$(ls -A dist 2>/dev/null)" ]; then

@@ -4,8 +4,8 @@ This page summarizes the primary classes for this project and how they fit toget
 
 ## Core Workflow
 
-- [`Calculator`][pyballistic.interface.Calculator]: High-level entry point to compute trajectories. Accepts a [`Shot`][pyballistic.conditions.Shot] (scene) and returns a [`HitResult`][pyballistic.trajectory_data.HitResult] with trajectory rows and helpers.
-- [`Shot`][pyballistic.conditions.Shot]: Details a shooting scenario – [`Ammo`][pyballistic.munition.Ammo], [`Atmo`][pyballistic.conditions.Atmo], [`Weapon`][pyballistic.munition.Weapon], [`Wind`][pyballistic.conditions.Wind], and angles (look/slant, relative, cant).
+- [`Calculator`][pyballistic.interface.Calculator]: High-level entry point to compute trajectories. Accepts a [`Shot`][pyballistic.shot.Shot] (scene) and returns a [`HitResult`][pyballistic.trajectory_data.HitResult] with trajectory rows and helpers.
+- [`Shot`][pyballistic.shot.Shot]: Details a shooting scenario – [`Ammo`][pyballistic.munition.Ammo], [`Atmo`][pyballistic.conditions.Atmo], [`Weapon`][pyballistic.munition.Weapon], [`Wind`][pyballistic.conditions.Wind], and angles (look/slant, relative, cant).
 - [`HitResult`][pyballistic.trajectory_data.HitResult]: Wrapper for accessing and displaying calculated results, including a list of [`TrajectoryData`][pyballistic.trajectory_data.TrajectoryData] (which are detailed characteristics of points on the ballistic trajectory).
 
 
@@ -46,7 +46,7 @@ classDiagram
 ```
 </div>
 
-The classes that comprise a [`Shot`][pyballistic.conditions.Shot]:
+The classes that comprise a [`Shot`][pyballistic.shot.Shot]:
 
 - [`Ammo`][pyballistic.munition.Ammo]: Wraps muzzle velocity, including optional powder temperature sensitivity, together with a DragModel.
     - [`DragModel`][pyballistic.drag_model]: Physical details of a projectile, including aerodynamic drag as a function of velocity.  (Drag is typically modelled via Ballistic Coefficient and standard [drag tables][pyballistic.drag_tables] – G1, G7, etc.)
@@ -66,7 +66,7 @@ Calculation engines implement different algorithms for integration and targeting
 ???+ api "Selected API references"
 
 	[`pyballistic.interface.Calculator`][pyballistic.interface.Calculator]<br>
-	[`pyballistic.conditions.Shot`][pyballistic.conditions.Shot]<br>
+	[`pyballistic.shot.Shot`][pyballistic.shot.Shot]<br>
 	[`pyballistic.munition.Ammo`][pyballistic.munition.Ammo]<br>
 	[`pyballistic.conditions.Atmo`][pyballistic.conditions.Atmo]<br>
 	[`pyballistic.munition.Weapon`][pyballistic.munition.Weapon]<br>

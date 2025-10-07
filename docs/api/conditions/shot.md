@@ -1,1 +1,3 @@
-::: pyballistic.conditions.Shot
+::: pyballistic.shot.Shot
+
+::: pyballistic.conditions.Coriolis

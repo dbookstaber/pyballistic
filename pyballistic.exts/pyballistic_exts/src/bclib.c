@@ -1,22 +1,22 @@
 #include "bclib.h"
 #include "v3d.h"
 #include <math.h>
-#include <stddef.h>
+#include <stddef.h>  // For size_t
 #include <stdio.h>   // For warnings (printf used here)
 #include <float.h>   // For fabs()
 #include <stdlib.h>
 
 // Constants for unit conversions and atmospheric calculations
+const double cEarthAngularVelocityRadS = 7.2921159e-5;
 const double cDegreesFtoR           = 459.67;
 const double cDegreesCtoK           = 273.15;
 const double cSpeedOfSoundImperial  = 49.0223;
 const double cSpeedOfSoundMetric    = 20.0467;
 const double cLapseRateKperFoot     = -0.0019812;
 const double cLapseRateImperial     = -0.00356616;
-const double cPressureExponent      = 5.2559;
+const double cPressureExponent      = 5.255876;
 const double cLowestTempF           = -130.0;
-const double mToFeet                = 3.28084;
-
+const double mToFeet                = 3.280839895;
 const double cMaxWindDistanceFeet   = 1e8;
 
 void Curve_t_free(Curve_t *curve_ptr) {
@@ -26,24 +26,6 @@ void Curve_t_free(Curve_t *curve_ptr) {
         curve_ptr->length = 0;     // optional: reset length
     }
 }
-
-///**
-// * Allocate and initialize MachList_t from a C array of doubles.
-// * Caller must free `array` later.
-// */
-//MachList_t MachList_fromArray(const double *values, size_t length) {
-//    MachList_t ml;
-//    ml.length = length;
-//    ml.array = (double *)malloc(length * sizeof(double));
-//    if (ml.array == NULL) {
-//        ml.length = 0;
-//        return ml;  // array == NULL means allocation failed
-//    }
-//    for (size_t i = 0; i < length; i++) {
-//        ml.array[i] = values[i];
-//    }
-//    return ml;
-//}
 
 void MachList_t_free(MachList_t *mach_list_ptr) {
     if (mach_list_ptr != NULL && mach_list_ptr->array != NULL) {
@@ -119,7 +101,7 @@ int ShotProps_t_updateStabilityCoefficient(ShotProps_t *shot_props_ptr) {
 
         fv = pow(shot_props_ptr->muzzle_velocity / 2800.0, 1.0 / 3.0);
         ft = (shot_props_ptr->atmo._t0 * 9.0 / 5.0) + 32.0;  // Convert from Celsius to Fahrenheit
-        pt = shot_props_ptr->atmo._p0 / 33.8639;  // Convert hPa to inHg
+        pt = shot_props_ptr->atmo._p0 / 33.863881565591;  // Convert hPa to inHg
 
         // Ensure pt is not zero before division
         if (pt != 0.0) {
@@ -139,34 +121,35 @@ int ShotProps_t_updateStabilityCoefficient(ShotProps_t *shot_props_ptr) {
 double calculateByCurveAndMachList(const MachList_t *mach_list_ptr,
                                    const Curve_t *curve_ptr,
                                    double mach) {
-    int num_points = (int)curve_ptr->length;
-    int mlo = 0;
-    int mhi = num_points - 2;  // Assuming we have at least 2 points
-    int mid, m;
-    CurvePoint_t curve_m;
-
-    // Binary search to find the closest two mach points
-    while (mhi - mlo > 1) {
-        mid = (mhi + mlo) / 2;
-        if (mach_list_ptr->array[mid] < mach) {
-            mlo = mid;
-        } else {
-            mhi = mid;
-        }
+    // PCHIP evaluation: find segment i with x in [x_i, x_{i+1}], then y = d + dx*(c + dx*(b + dx*a))
+    const double *xs = mach_list_ptr->array;
+    int n = (int)mach_list_ptr->length;     // number of knots
+    if (n < 2) {
+        // insufficient data; return 0
+        return 0.0;
     }
 
-    // Choose the closer point
-    if ((mach_list_ptr->array[mhi] - mach) > (mach - mach_list_ptr->array[mlo])) {
-        m = mlo;
+    // Clamp to range endpoints
+    int i;
+    if (mach <= xs[0]) {
+        i = 0;
+    } else if (mach >= xs[n - 1]) {
+        i = n - 2;
     } else {
-        m = mhi;
+        // lower_bound to find first j with xs[j] >= mach, then i = j - 1
+        int lo = 0, hi = n - 1;
+        while (lo < hi) {
+            int mid = lo + (hi - lo) / 2;
+            if (xs[mid] < mach) lo = mid + 1; else hi = mid;
+        }
+        i = lo - 1;
+        if (i < 0) i = 0;
+        if (i > n - 2) i = n - 2;
     }
 
-    // Lookup corresponding curve point
-    curve_m = curve_ptr->points[m];
-
-    // Calculate value using a + b*m + c formula
-    return curve_m.c + mach * (curve_m.b + curve_m.a * mach);
+    CurvePoint_t seg = curve_ptr->points[i];
+    double dx = mach - xs[i];
+    return seg.d + dx * (seg.c + dx * (seg.b + dx * seg.a));
 }
 
 /**
@@ -257,6 +240,21 @@ V3dT Wind_t_to_V3dT(const Wind_t *wind_ptr) {
     };
 }
 
+void WindSock_t_init(WindSock_t *ws, size_t length, Wind_t *winds) {
+
+    ws->length = (int)length;
+    ws->winds = winds;
+
+    ws->current = 0;
+    ws->next_range = cMaxWindDistanceFeet;
+
+    ws->last_vector_cache.x = 0.0;
+    ws->last_vector_cache.y = 0.0;
+    ws->last_vector_cache.z = 0.0;
+
+    WindSock_t_updateCache(ws);
+}
+
 void WindSock_t_free(WindSock_t *ws) {
     if (ws != NULL) {
         if (ws->winds != NULL) {
@@ -331,5 +329,44 @@ double calculateEnergy(double bulletWeight, double velocity) {
 }
 
 double calculateOgw(double bulletWeight, double velocity) {
-    return pow(bulletWeight, 2) * pow(velocity, 3) * 1.5e-12;
+    return bulletWeight * bulletWeight * velocity * velocity * velocity * 1.5e-12;
+}
+
+/**
+ * @brief Calculate Coriolis acceleration in local coordinates
+ * @param coriolis_ptr Pointer to Coriolis_t containing precomputed transformation data
+ * @param velocity Pointer to ground velocity of projectile
+ * @param accel_ptr Pointer to store acceleration in local coordinates
+ */
+void Coriolis_t_coriolis_acceleration_local(
+    const Coriolis_t *coriolis_ptr,
+    V3dT *velocity_ptr,
+    V3dT *accel_ptr
+) {
+    // Return zero acceleration if not full 3D mode
+    if (coriolis_ptr->flat_fire_only) {
+        accel_ptr->x = 0.0;
+        accel_ptr->y = 0.0;
+        accel_ptr->z = 0.0;
+        return;
+    }
+
+    // Transform velocity from local (range/up/cross) to ENU coordinates
+    double vel_east = velocity_ptr->x * coriolis_ptr->range_east + velocity_ptr->z * coriolis_ptr->cross_east;
+    double vel_north = velocity_ptr->x * coriolis_ptr->range_north + velocity_ptr->z * coriolis_ptr->cross_north;
+    double vel_up = velocity_ptr->y;
+
+    // Coriolis acceleration in ENU coordinates
+    double factor = -2.0 * cEarthAngularVelocityRadS;
+    double accel_east = factor * (coriolis_ptr->cos_lat * vel_up - coriolis_ptr->sin_lat * vel_north);
+    double accel_north = factor * (coriolis_ptr->sin_lat * vel_east);
+    double accel_up = factor * (-coriolis_ptr->cos_lat * vel_east);
+
+    // Transform acceleration back to local coordinates
+    double accel_range = accel_east * coriolis_ptr->range_east + accel_north * coriolis_ptr->range_north;
+    double accel_cross = accel_east * coriolis_ptr->cross_east + accel_north * coriolis_ptr->cross_north;
+
+    accel_ptr->x = accel_range;
+    accel_ptr->y = accel_up;
+    accel_ptr->z = accel_cross;
 }

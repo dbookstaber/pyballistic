@@ -1,7 +1,6 @@
 # noinspection PyUnresolvedReferences
 from pyballistic_exts.v3d cimport V3dT
 
-
 cdef extern from "include/bclib.h":
     # Using 'int' as the underlying type for the enum
     # Cython can typically handle C enums directly.
@@ -23,15 +22,6 @@ cdef extern from "include/bclib.h":
         V3dT velocity
         double mach
 
-# Expose new interpolation helpers for tests and reuse across modules
-cpdef double interpolate_3_pt(double x, double x0, double y0, double x1, double y1, double x2, double y2)
-cpdef double interpolate_2_pt(double x, double x0, double y0, double x1, double y1)
-
-# Internal nogil helpers for PCHIP used by base_traj_seq
-cdef void _sort3(double* xs, double* ys) noexcept nogil
-cdef void _pchip_slopes3(double x0, double y0, double x1, double y1, double x2, double y2,
-                         double* m0, double* m1, double* m2) noexcept nogil
-cdef double _hermite(double x, double xk, double xk1, double yk, double yk1, double mk, double mk1) noexcept nogil
 
 cdef class BaseTrajDataT:
     cdef:
@@ -51,9 +41,9 @@ cdef class TrajectoryDataT:
         readonly double mach
         readonly object height
         readonly object slant_height
-        readonly object drop_adj
+        readonly object drop_angle
         readonly object windage
-        readonly object windage_adj
+        readonly object windage_angle
         readonly object slant_distance
         readonly object angle
         readonly double density_ratio
@@ -61,9 +51,3 @@ cdef class TrajectoryDataT:
         readonly object energy
         readonly object ogw
         readonly int flag
-
-    # @staticmethod
-    # cdef from_BaseTrajDataT(BaseTrajDataT base_data)
-
-# Factory helper exposed for use from other Cython modules
-cdef BaseTrajDataT BaseTrajDataT_create(double time, V3dT position, V3dT velocity, double mach)

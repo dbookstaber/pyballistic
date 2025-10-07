@@ -18,10 +18,10 @@ from deprecated import deprecated
 from typing_extensions import Union, List, Optional, TypeVar, Type, Generator
 
 from pyballistic import RK4IntegrationEngine
-from pyballistic.conditions import Shot
 from pyballistic.drag_model import DragDataPoint
 from pyballistic.generics.engine import EngineProtocol
 from pyballistic.logger import logger
+from pyballistic.shot import Shot
 from pyballistic.trajectory_data import HitResult, TrajFlag
 from pyballistic.unit import Angular, Distance, PreferredUnits
 

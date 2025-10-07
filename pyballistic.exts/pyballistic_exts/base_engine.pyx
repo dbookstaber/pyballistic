@@ -11,10 +11,22 @@ from libc.stdlib cimport malloc, free
 # noinspection PyUnresolvedReferences
 from libc.math cimport fabs, sin, cos, tan, atan2, sqrt, copysign
 # noinspection PyUnresolvedReferences
-from pyballistic_exts.trajectory_data cimport TrajFlag_t, BaseTrajDataT
-import pyballistic_exts.trajectory_data as td
+from pyballistic_exts.trajectory_data cimport (
+    TrajFlag_t,
+    BaseTrajDataT,
+    TrajectoryDataT,
+)
+# noinspection PyUnresolvedReferences
+from pyballistic_exts.unit_helper cimport (
+    _new_feet,
+    _new_fps,
+    _new_rad,
+    _new_ft_lb,
+    _new_lb,
+)
 # noinspection PyUnresolvedReferences
 from pyballistic_exts.v3d cimport V3dT, mag
+# noinspection PyUnresolvedReferences
 from pyballistic_exts.base_traj_seq cimport CBaseTrajSeq, BaseTrajC
 # noinspection PyUnresolvedReferences
 from pyballistic_exts.cy_bindings cimport (
@@ -25,14 +37,16 @@ from pyballistic_exts.cy_bindings cimport (
     ShotProps_t_free,
     ShotProps_t_spinDrift,
     ShotProps_t_updateStabilityCoefficient,
-    Wind_t_from_python,
+    Wind_t_from_py,
+    Coriolis_t,
     # factory funcs
     Config_t_from_pyobject,
     MachList_t_from_pylist,
     Curve_t_from_pylist,
 )
 
-from pyballistic.conditions import ShotProps
+from pyballistic.shot import ShotProps
+from pyballistic.conditions import Coriolis
 from pyballistic.engines.base_engine import create_base_engine_config, TrajectoryDataFilter
 from pyballistic.engines.base_engine import BaseIntegrationEngine as _PyBaseIntegrationEngine
 from pyballistic.exceptions import ZeroFindingError, RangeError, OutOfRangeError, SolverRuntimeError
@@ -48,37 +62,36 @@ __all__ = (
 
 cdef WindSock_t * WindSock_t_create(object winds_py_list) except NULL:
     """
-    Creates and initializes a WindSock_t struct from a Python list of wind objects.
-    This function handles the allocation of the struct and its internal Wind_t array.
+    Creates and initializes a WindSock_t structure.
+    Processes the Python list, then delegates initialization to C.
     """
-    cdef WindSock_t * ws = <WindSock_t *>malloc(sizeof(WindSock_t))
-    if <void*>ws == NULL:
-        raise MemoryError()
+    cdef size_t length = <size_t> len(winds_py_list)
 
-    ws.length = <int>len(winds_py_list)
-    ws.winds = <Wind_t *>malloc(<size_t>ws.length * sizeof(Wind_t))
-    if <void*>ws.winds == NULL:
-        free(<void*>ws)
-        raise MemoryError()
+    # 1. Memory allocation for the struct (remains in Cython)
+    cdef WindSock_t * ws = <WindSock_t *> malloc(sizeof(WindSock_t))
+    if <void *> ws == NULL:
+        raise MemoryError("Failed to allocate WindSock_t structure.")
 
+    # 2. Memory allocation for the Wind_t array (remains in Cython)
+    cdef Wind_t * winds_array = <Wind_t *> malloc(<size_t> length * sizeof(Wind_t))
+    if <void *> winds_array == NULL:
+        free(<void *> ws)
+        raise MemoryError("Failed to allocate internal Wind_t array.")
+
+    # 3. Copying data from Python objects to C structures (must remain in Cython)
     cdef int i
     try:
-        for i in range(ws.length):
-            ws.winds[i] = Wind_t_from_python(winds_py_list[i])
+        for i in range(length):
+            # Wind_t_from_py interacts with a Python object, so it remains here
+            winds_array[i] = Wind_t_from_py(winds_py_list[i])
     except Exception:
-        free(<void*>ws.winds)
-        ws.winds = <Wind_t *>NULL
-        free(<void*>ws)
+        # Error handling
+        free(<void *> winds_array)
+        free(<void *> ws)
         raise RuntimeError("Invalid wind entry in winds list")
 
-    ws.current = 0
-    ws.next_range = cMaxWindDistanceFeet
-    ws.last_vector_cache.x = <double>0.0
-    ws.last_vector_cache.y = <double>0.0
-    ws.last_vector_cache.z = <double>0.0
-
-    # Initialize cache correctly
-    WindSock_t_updateCache(ws)
+    # 4. Structure initialization (calling the C function)
+    WindSock_t_init(ws, length, winds_array)
 
     return ws
 
@@ -293,7 +306,11 @@ cdef class CythonizedBaseIntegrationEngine:
 
         self._table_data = shot_info.ammo.dm.drag_table
         # Build C shot struct with robust cleanup on any error that follows
+        cdef object coriolis_obj
         try:
+            # Create coriolis object from shot parameters
+            coriolis_obj = Coriolis.create(shot_info.latitude, shot_info.azimuth, shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp)._fps)
+            
             self._shot_s = ShotProps_t(
                 bc=shot_info.ammo.dm.BC,
                 curve=Curve_t_from_pylist(self._table_data),
@@ -310,7 +327,7 @@ cdef class CythonizedBaseIntegrationEngine:
                 cant_sine=sin(shot_info.cant_angle._rad),
                 alt0=shot_info.atmo.altitude._feet,
                 calc_step=self.get_calc_step(),
-                diameter=shot_info.ammo.dm.diameter._inch,
+                muzzle_velocity=shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp)._fps,
                 stability_coefficient=0.0,
                 filter_flags=0,
                 atmo=Atmosphere_t(
@@ -320,9 +337,20 @@ cdef class CythonizedBaseIntegrationEngine:
                     _mach=shot_info.atmo._mach,
                     density_ratio=shot_info.atmo.density_ratio,
                     cLowestTempC=shot_info.atmo.cLowestTempC,
+                ),
+                coriolis=Coriolis_t(
+                    sin_lat=coriolis_obj.sin_lat if coriolis_obj else 0.0,
+                    cos_lat=coriolis_obj.cos_lat if coriolis_obj else 0.0,
+                    sin_az=coriolis_obj.sin_az if coriolis_obj and coriolis_obj.sin_az is not None else 0.0,
+                    cos_az=coriolis_obj.cos_az if coriolis_obj and coriolis_obj.cos_az is not None else 0.0,
+                    range_east=coriolis_obj.range_east if coriolis_obj and coriolis_obj.range_east is not None else 0.0,
+                    range_north=coriolis_obj.range_north if coriolis_obj and coriolis_obj.range_north is not None else 0.0,
+                    cross_east=coriolis_obj.cross_east if coriolis_obj and coriolis_obj.cross_east is not None else 0.0,
+                    cross_north=coriolis_obj.cross_north if coriolis_obj and coriolis_obj.cross_north is not None else 0.0,
+                    flat_fire_only=coriolis_obj.flat_fire_only if coriolis_obj else 0,
+                    muzzle_velocity_fps=coriolis_obj.muzzle_velocity_fps if coriolis_obj else 0.0,
                 )
             )
-            self._shot_s.muzzle_velocity = shot_info.ammo.get_velocity_for_temp(shot_info.atmo.powder_temp)._fps
             if ShotProps_t_updateStabilityCoefficient(&self._shot_s) < 0:
                 raise ZeroDivisionError("Zero division detected in ShotProps_t_updateStabilityCoefficient")
         except Exception:
@@ -346,7 +374,8 @@ cdef class CythonizedBaseIntegrationEngine:
 
         return &self._shot_s
 
-    cdef tuple _init_zero_calculation(CythonizedBaseIntegrationEngine self, ShotProps_t *shot_props_ptr, double distance):
+    
+    cdef tuple _init_zero_calculation(CythonizedBaseIntegrationEngine self, const ShotProps_t *shot_props_ptr, double distance):
         """
         Initializes the zero calculation for the given shot and distance.
         Handles edge cases.
@@ -818,26 +847,26 @@ cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, con
         double spin_drift = ShotProps_t_spinDrift(shot_props_ptr, time)
         double velocity = mag(velocity_vector_ptr)
         double windage = range_vector_ptr.z + spin_drift
-        double drop_adjustment = getCorrection(range_vector_ptr.x, range_vector_ptr.y)
-        double windage_adjustment = getCorrection(range_vector_ptr.x, windage)
+        double drop_angleustment = getCorrection(range_vector_ptr.x, range_vector_ptr.y)
+        double windage_angleustment = getCorrection(range_vector_ptr.x, windage)
         double trajectory_angle = atan2(velocity_vector_ptr.y, velocity_vector_ptr.x);
         double look_angle_cos = cos(look_angle)
         double look_angle_sin = sin(look_angle)
 
-    drop_adjustment -= (look_angle if range_vector_ptr.x else 0)
+    drop_angleustment -= (look_angle if range_vector_ptr.x else 0)
 
     # Note: Cython cdef class constructors don't support keyword args reliably from Cython.
     # Pass all fields positionally in the defined order.
-    return td.TrajectoryData(
+    return TrajectoryData(
         time,
         _new_feet(range_vector_ptr.x),
         _new_fps(velocity),
         velocity / mach,
         _new_feet(range_vector_ptr.y),
         _new_feet(range_vector_ptr.y * look_angle_cos - range_vector_ptr.x * look_angle_sin),
-        _new_rad(drop_adjustment),
+        _new_rad(drop_angleustment),
         _new_feet(windage),
-        _new_rad(windage_adjustment),
+        _new_rad(windage_angleustment),
         _new_feet(range_vector_ptr.x * look_angle_cos + range_vector_ptr.y * look_angle_sin),
         _new_rad(trajectory_angle),
         density_ratio,
@@ -846,23 +875,3 @@ cdef object create_trajectory_row(double time, const V3dT *range_vector_ptr, con
         _new_lb(calculateOgw(shot_props_ptr.weight, velocity)),
         flag
     )
-
-
-cdef object _new_feet(double v):
-    return Distance(float(v), Unit.Foot)
-
-
-cdef object _new_fps(double v):
-    return Velocity(float(v), Unit.FPS)
-
-
-cdef object _new_rad(double v):
-    return Angular(float(v), Unit.Radian)
-
-
-cdef object _new_ft_lb(double v):
-    return Energy(float(v), Unit.FootPound)
-
-
-cdef object _new_lb(double v):
-    return Weight(float(v), Unit.Pound)

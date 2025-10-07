@@ -43,10 +43,12 @@ from enum import Enum, auto
 from typing_extensions import List, NamedTuple, Optional, Tuple, TypedDict, TypeVar, Union
 
 from pyballistic._compat import bisect_left_key
-from pyballistic.conditions import Shot, ShotProps, Wind
+from pyballistic.conditions import Wind
+from pyballistic.constants import cGravityImperial
 from pyballistic.exceptions import ZeroFindingError, OutOfRangeError, SolverRuntimeError
 from pyballistic.generics.engine import EngineProtocol
 from pyballistic.logger import logger
+from pyballistic.shot import Shot, ShotProps
 from pyballistic.trajectory_data import BaseTrajData, HitResult, TrajectoryData, TrajFlag
 from pyballistic.unit import Distance, Angular
 from pyballistic.vector import Vector
@@ -69,7 +71,7 @@ cMaxIterations: int = 40  # maximum number of iterations for zero search
 cMinimumAltitude: float = -1500  # feet, below sea level
 cMaximumDrop: float = -10000  # feet, maximum drop from the muzzle to continue trajectory
 cMinimumVelocity: float = 50.0  # fps, minimum velocity to continue trajectory
-cGravityConstant: float = -32.17405  # feet per second squared
+cGravityConstant: float = -cGravityImperial  # feet per second squared
 cStepMultiplier: float = 1.0  # Multiplier for engine's default step, for changing integration speed & precision
 
 

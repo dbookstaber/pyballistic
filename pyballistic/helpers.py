@@ -3,9 +3,9 @@ import math
 from deprecated import deprecated
 from typing import Callable, Any, Final, List, Tuple, Optional
 
-from pyballistic.conditions import Shot
 from pyballistic.exceptions import RangeError
 from pyballistic.interface import Calculator
+from pyballistic.shot import Shot
 from pyballistic.trajectory_data import HitResult, TrajectoryData
 from pyballistic.unit import Distance, Unit
 

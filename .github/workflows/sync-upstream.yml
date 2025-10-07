@@ -37,7 +37,7 @@ jobs:
       PR_CREATE_TOKEN: ${{ secrets.PR_CREATE_TOKEN }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

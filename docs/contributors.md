@@ -6,7 +6,7 @@ Here, we celebrate those people and their contributions.
 ## Contributors
 **This project exists thanks to all the people who contribute.**
 
-<a href="https://github.com/dbookstaber/pyballistic/graphs/contributors"><img height=32 src="https://contrib.rocks/image?repo=o-murphy/pyballistic" /></a>
+<a href="https://github.com/dbookstaber/pyballistic/graphs/contributors"><img height=32 src="https://contrib.rocks/image?repo=dbookstaber/pyballistic" /></a>
 
 Special thanks to:
 

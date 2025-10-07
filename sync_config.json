@@ -20,11 +20,15 @@
     { "from": "py-ballisticcalc", "to": "pyballistic" }
   ],
   "exclude_paths": [
-    "README.md",
     "AGENTS.md",
+    "README.md",
+    "pyballistic.exts/AGENTS.md",
     "pyballistic.exts/README.md",
     "contributors.md",
-    ".gitignore"
+    ".gitignore",
+    "sync_config.json",
+    "sync_upstream.py",
+    "testall.ps1"
   ],
   "binary_patterns": [
     "**/*.png",
