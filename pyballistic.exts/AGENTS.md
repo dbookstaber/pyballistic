@@ -17,6 +17,7 @@ This (`pyballistic.exts`) is the optional Cython subproject of `pyballistic`. It
 # Testing
 From subproject root, `pytest tests` only test functionality unique to Cython and this subproject.
 * For coverage of Cython code, true line coverage requires compiling with CYTHON_TRACE; otherwise rely on tests passing and targeted smoke checks.
+* Stress/memory-leak tests are `pytest.mark.stress` and excluded by default.  To run those `pytest tests -m stress`.
 
 To confirm core functionality run root project tests with cythonized engines. From repo root: `pytest --engine="cythonized_rk4_engine"`
 
